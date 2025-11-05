@@ -1,3 +1,4 @@
+using Azure.Core;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Http;
 using Microsoft.Extensions.Logging;
@@ -22,6 +23,14 @@ public class ProcessPayment
         _logger.LogInformation("Received payment request");
 
         string requestBody = await new StreamReader(req.Body).ReadToEndAsync();
+
+        if(string.IsNullOrWhiteSpace(requestBody))
+        {
+            var badResponse = req.CreateResponse(HttpStatusCode.BadRequest);
+            await badResponse.WriteStringAsync("Empty request body");
+            return badResponse;
+        }
+
         var transaction = JsonSerializer.Deserialize<Transaction>(requestBody);
 
         if (transaction == null || transaction.Amount <= 0)
