@@ -1,3 +1,5 @@
+targetScope = 'resourceGroup'
+
 param location string = resourceGroup().location
 param functionAppName string = 'event-payment-func'
 
