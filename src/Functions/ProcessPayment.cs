@@ -1,9 +1,9 @@
-using Azure.Core;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Http;
 using Microsoft.Extensions.Logging;
 using System.Net;
 using System.Text.Json;
+using System.Text;
 
 namespace Functions;
 
@@ -17,18 +17,18 @@ public class ProcessPayment
     }
 
     [Function("ProcessPayment")]
-    public async Task<HttpResponseData> Run(
+    [ServiceBusOutput("transactions", Connection = "ServiceBusConnection")]
+    public async Task<string> Run(
         [HttpTrigger(AuthorizationLevel.Function, "post")] HttpRequestData req)
     {
         _logger.LogInformation("Received payment request");
 
         string requestBody = await new StreamReader(req.Body).ReadToEndAsync();
-
         if(string.IsNullOrWhiteSpace(requestBody))
         {
             var badResponse = req.CreateResponse(HttpStatusCode.BadRequest);
             await badResponse.WriteStringAsync("Empty request body");
-            return badResponse;
+            return null!;
         }
 
         var transaction = JsonSerializer.Deserialize<Transaction>(requestBody);
@@ -37,14 +37,17 @@ public class ProcessPayment
         {
             var badResponse = req.CreateResponse(HttpStatusCode.BadRequest);
             await badResponse.WriteStringAsync("Invalid transaction data");
-            return badResponse;
+            return null!;
         }
 
         _logger.LogInformation($"Transaction {transaction.Id} validated. Amount: {transaction.Amount}");
+        
+        // Convert transaction object to JSON for the queue message
+        string messageBody = JsonSerializer.Serialize(transaction);
 
         var response = req.CreateResponse(HttpStatusCode.OK);
         await response.WriteStringAsync($"Payment processed for card: {transaction.CardNumberMasked}");
-        return response;
+        return messageBody;
     }
        public record Transaction
     {
