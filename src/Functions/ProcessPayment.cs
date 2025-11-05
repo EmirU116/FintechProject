@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using System.Net;
 using System.Text.Json;
 using System.Text;
+using Source.Core.Transaction;
 
 namespace Functions;
 
@@ -48,14 +49,5 @@ public class ProcessPayment
         var response = req.CreateResponse(HttpStatusCode.OK);
         await response.WriteStringAsync($"Payment processed for card: {transaction.CardNumberMasked}");
         return messageBody;
-    }
-       public record Transaction
-    {
-        public string Id { get; init; } = Guid.NewGuid().ToString();
-        public string CardNumberMasked => $"****-****-****-{CardNumber[^4..]}";
-        public string CardNumber { get; init; } = "";
-        public decimal Amount { get; init; }
-        public string Currency { get; init; } = "USD";
-        public DateTime Timestamp { get; init; } = DateTime.UtcNow;
     }
 }
