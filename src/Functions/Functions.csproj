@@ -20,6 +20,7 @@
 
   <ItemGroup>
     <Compile Include="..\Core\Transaction.cs" Link="Models\Transaction.cs" />
+    <Compile Include="..\Core\TransactionValidator.cs" Link="Models\TransactionValidator.cs" />
   </ItemGroup>
 
 </Project>

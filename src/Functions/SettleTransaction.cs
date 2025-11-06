@@ -34,6 +34,19 @@ public class SettleTransaction
                 return;
             }
 
+            // Validate the transaction using the validation function
+            var validationResult = TransactionValidator.ValidateTransaction(transaction);
+            
+            if (!validationResult.IsValid)
+            {
+                _logger.LogError($"Transaction validation failed for {transaction.Id}: {validationResult.GetErrorMessage()}");
+                // In a real scenario, you might want to send this to a dead letter queue
+                // or handle the validation failure appropriately
+                return;
+            }
+
+            _logger.LogInformation($"Transaction {transaction.Id} passed validation");
+
             // Simulating business logic - like marking as settled, write to DB, audit log
             _logger.LogInformation($"Settling transaction: {transaction.Id} for amount {transaction.Amount} {transaction.Currency}");
 
