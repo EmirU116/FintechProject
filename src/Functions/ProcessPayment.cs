@@ -22,9 +22,12 @@ public class ProcessPayment
     public async Task<string> Run(
         [HttpTrigger(AuthorizationLevel.Function, "post")] HttpRequestData req)
     {
+        // this handles basic validation, checking if the incoming data has the required data with values
+        // if its either null or empty, the code will complain.
         _logger.LogInformation("Received payment request");
 
         string requestBody = await new StreamReader(req.Body).ReadToEndAsync();
+        // checks if the request is null or has white space = fails
         if(string.IsNullOrWhiteSpace(requestBody))
         {
             var badResponse = req.CreateResponse(HttpStatusCode.BadRequest);
@@ -33,7 +36,8 @@ public class ProcessPayment
         }
 
         var transaction = JsonSerializer.Deserialize<Transaction>(requestBody);
-
+        // after packing out the json data, this checks if the transaction is null or if the amount cost is under
+        // or equal to 0
         if (transaction == null || transaction.Amount <= 0)
         {
             var badResponse = req.CreateResponse(HttpStatusCode.BadRequest);
@@ -42,10 +46,11 @@ public class ProcessPayment
         }
 
         _logger.LogInformation($"Transaction {transaction.Id} validated. Amount: {transaction.Amount}");
-        
+
         // Convert transaction object to JSON for the queue message
         string messageBody = JsonSerializer.Serialize(transaction);
 
+        // sends the data to service bus queue
         var response = req.CreateResponse(HttpStatusCode.OK);
         await response.WriteStringAsync($"Payment processed for card: {transaction.CardNumberMasked}");
         return messageBody;
