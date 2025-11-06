@@ -5,6 +5,7 @@ using Azure.Messaging.ServiceBus;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Logging;
 using Source.Core.Transaction;
+using Source.Core;
 
 
 namespace Source.Functions;
@@ -47,11 +48,28 @@ public class SettleTransaction
 
             _logger.LogInformation($"Transaction {transaction.Id} passed validation");
 
-            // Simulating business logic - like marking as settled, write to DB, audit log
-            _logger.LogInformation($"Settling transaction: {transaction.Id} for amount {transaction.Amount} {transaction.Currency}");
+            // Get buyer's current balance
+            var buyerBalance = await TransactionProcessor.GetBuyerBalance(transaction.CardNumber);
+            _logger.LogInformation($"Retrieved buyer balance: {buyerBalance} {transaction.Currency}");
 
-            // Add your settlement logic here
-            await ProcessSettlement(transaction);
+            // Process the business logic for the transaction
+            var transactionResult = await TransactionProcessor.ProcessTransaction(transaction, buyerBalance);
+            
+            if (transactionResult.IsSuccessful)
+            {
+                _logger.LogInformation($"Transaction {transaction.Id} completed successfully: {transactionResult.Message}");
+                _logger.LogInformation($"Buyer's remaining balance: {transactionResult.RemainingBalance} {transaction.Currency}");
+                
+                // Proceed with settlement processing
+                await ProcessSettlement(transaction, transactionResult);
+            }
+            else
+            {
+                _logger.LogError($"Transaction {transaction.Id} failed: {transactionResult.Message}");
+                // In a real scenario, you might want to send this to a failed transactions queue
+                // or notify the buyer about insufficient funds
+                return;
+            }
         }
         catch (JsonException ex)
         {
@@ -63,14 +81,19 @@ public class SettleTransaction
         }
     }
 
-    private async Task ProcessSettlement(Transaction transaction)
+    private async Task ProcessSettlement(Transaction transaction, TransactionProcessor.TransactionResult result)
     {
         // Simulate async settlement processing
         _logger.LogInformation($"Processing settlement for transaction {transaction.Id}");
         
-        // Add your actual settlement logic here
+        // Log the transaction details
+        _logger.LogInformation($"Settlement Status: {result.Status}");
+        _logger.LogInformation($"Amount transferred: {transaction.Amount} {transaction.Currency}");
+        _logger.LogInformation($"Buyer's remaining balance: {result.RemainingBalance} {transaction.Currency}");
+        
+        // Add your actual settlement logic here (e.g., database updates, audit logs, notifications)
         await Task.Delay(100); // Simulate processing time
         
-        _logger.LogInformation($"Successfully settled transaction {transaction.Id}");
+        _logger.LogInformation($"Successfully settled transaction {transaction.Id} with status: {result.Status}");
     }
 }
