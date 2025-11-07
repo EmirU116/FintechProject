@@ -7,6 +7,7 @@ namespace Source.Core.Transaction
 {
     public static class TransactionValidator
     {
+        // This function is validtating multiple different rules
         public static ValidationResult ValidateTransaction(Transaction transaction)
         {
             var errors = new List<string>();
@@ -63,6 +64,10 @@ namespace Source.Core.Transaction
 
         private static bool ValidateCurrency(string currency)
         {
+            // TODO:
+            // make the converting curreny 
+
+
             if (string.IsNullOrWhiteSpace(currency))
                 return false;
 
