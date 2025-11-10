@@ -22,6 +22,7 @@
     <Compile Include="..\Core\Transaction.cs" Link="Models\Transaction.cs" />
     <Compile Include="..\Core\TransactionValidator.cs" Link="Models\TransactionValidator.cs" />
     <Compile Include="..\Core\TransactionProcessor.cs" Link="Models\TransactionProcessor.cs" />
+    <Compile Include="..\Core\DummyCreditCardService.cs" Link="Models\DummyCreditCardService.cs" />
   </ItemGroup>
 
 </Project>

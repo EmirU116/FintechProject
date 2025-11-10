@@ -17,53 +17,56 @@ namespace Source.Core
             // Simulate payment gateway call (Stripe, Square, etc.)
             await Task.Delay(100); // Simulate network call to payment processor
             
-            // In real scenario: Send to payment gateway (Stripe, PayPal, etc.)
-            // They handle authorization and return approve/decline
-            var authorizationResult = await SimulatePaymentGatewayCall(transaction);
-            
-            if (!authorizationResult.IsApproved)
+            // Check if card exists in our dummy system
+            var card = DummyCreditCardService.GetCard(transaction.CardNumber);
+            if (card == null)
             {
                 return new TransactionResult
                 {
                     IsSuccessful = false,
-                    Status = authorizationResult.DeclineReason,
-                    Message = $"Transaction declined: {authorizationResult.DeclineReason}",
-                    RemainingBalance = 0 // We don't know or need the actual balance
+                    Status = "INVALID_CARD",
+                    Message = "Card number not found in system",
+                    RemainingBalance = 0
                 };
             }
 
-            // Transaction approved by payment gateway
+            // Check card validity (active, not expired)
+            var declineReason = DummyCreditCardService.GetDeclineReason(transaction.CardNumber);
+            if (declineReason != "APPROVED")
+            {
+                return new TransactionResult
+                {
+                    IsSuccessful = false,
+                    Status = declineReason,
+                    Message = $"Transaction declined: {declineReason}",
+                    RemainingBalance = card.Balance
+                };
+            }
+
+            // Check sufficient funds
+            if (card.Balance < transaction.Amount)
+            {
+                return new TransactionResult
+                {
+                    IsSuccessful = false,
+                    Status = "INSUFFICIENT_FUNDS",
+                    Message = $"Insufficient funds. Available: {card.Balance:C}, Required: {transaction.Amount:C}",
+                    RemainingBalance = card.Balance
+                };
+            }
+
+            // Transaction approved - simulate processing
+            var remainingBalance = card.Balance - transaction.Amount;
+            
             return new TransactionResult
             {
                 IsSuccessful = true,
                 Status = "AUTHORIZED",
-                Message = $"Transaction authorized successfully. Amount: {transaction.Amount} {transaction.Currency}",
-                RemainingBalance = 0 // Not applicable - we don't track customer balances
+                Message = $"Transaction authorized for {card.CardHolderName}. Amount: {transaction.Amount:C}",
+                RemainingBalance = remainingBalance
             };
         }
 
-        private static async Task<AuthorizationResult> SimulatePaymentGatewayCall(Source.Core.Transaction.Transaction transaction)
-        {
-            // Simulate call to payment gateway (Stripe, Square, PayPal, etc.)
-            await Task.Delay(50);
-            
-            // Simulate different authorization outcomes based on card number
-            // In reality, this comes from the actual payment processor
-            var lastDigit = int.Parse(transaction.CardNumber[^1..]);
-            
-            return lastDigit switch
-            {
-                0 or 1 => new AuthorizationResult { IsApproved = false, DeclineReason = "INSUFFICIENT_FUNDS" },
-                2 => new AuthorizationResult { IsApproved = false, DeclineReason = "CARD_DECLINED" },
-                3 => new AuthorizationResult { IsApproved = false, DeclineReason = "EXPIRED_CARD" },
-                _ => new AuthorizationResult { IsApproved = true, DeclineReason = "" }
-            };
-        }
 
-        private class AuthorizationResult
-        {
-            public bool IsApproved { get; init; }
-            public string DeclineReason { get; init; } = "";
-        }
     }
 }
