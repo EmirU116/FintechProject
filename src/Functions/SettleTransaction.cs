@@ -48,26 +48,21 @@ public class SettleTransaction
 
             _logger.LogInformation($"Transaction {transaction.Id} passed validation");
 
-            // Get buyer's current balance
-            var buyerBalance = await TransactionProcessor.GetBuyerBalance(transaction.CardNumber);
-            _logger.LogInformation($"Retrieved buyer balance: {buyerBalance} {transaction.Currency}");
-
-            // Process the business logic for the transaction
-            var transactionResult = await TransactionProcessor.ProcessTransaction(transaction, buyerBalance);
+            // Process the transaction through payment gateway (no balance checking needed)
+            var transactionResult = await TransactionProcessor.ProcessTransaction(transaction);
             
             if (transactionResult.IsSuccessful)
             {
-                _logger.LogInformation($"Transaction {transaction.Id} completed successfully: {transactionResult.Message}");
-                _logger.LogInformation($"Buyer's remaining balance: {transactionResult.RemainingBalance} {transaction.Currency}");
+                _logger.LogInformation($"Transaction {transaction.Id} authorized successfully: {transactionResult.Message}");
                 
                 // Proceed with settlement processing
                 await ProcessSettlement(transaction, transactionResult);
             }
             else
             {
-                _logger.LogError($"Transaction {transaction.Id} failed: {transactionResult.Message}");
-                // In a real scenario, you might want to send this to a failed transactions queue
-                // or notify the buyer about insufficient funds
+                _logger.LogError($"Transaction {transaction.Id} declined: {transactionResult.Message}");
+                // In a real scenario, you might want to send this to a declined transactions queue
+                // or handle the decline reason appropriately
                 return;
             }
         }
@@ -87,13 +82,16 @@ public class SettleTransaction
         _logger.LogInformation($"Processing settlement for transaction {transaction.Id}");
         
         // Log the transaction details
-        _logger.LogInformation($"Settlement Status: {result.Status}");
-        _logger.LogInformation($"Amount transferred: {transaction.Amount} {transaction.Currency}");
-        _logger.LogInformation($"Buyer's remaining balance: {result.RemainingBalance} {transaction.Currency}");
+        _logger.LogInformation($"Authorization Status: {result.Status}");
+        _logger.LogInformation($"Amount authorized: {transaction.Amount} {transaction.Currency}");
         
-        // Add your actual settlement logic here (e.g., database updates, audit logs, notifications)
+        // Add your actual settlement logic here:
+        // - Save transaction to database
+        // - Send confirmation to merchant
+        // - Update audit logs
+        // - Send receipt to customer
         await Task.Delay(100); // Simulate processing time
         
-        _logger.LogInformation($"Successfully settled transaction {transaction.Id} with status: {result.Status}");
+        _logger.LogInformation($"Successfully settled transaction {transaction.Id} with authorization status: {result.Status}");
     }
 }

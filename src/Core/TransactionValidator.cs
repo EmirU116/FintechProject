@@ -46,7 +46,9 @@ namespace Source.Core.Transaction
             {
                 errors.Add("Transaction timestamp cannot be in the future");
             }
-
+            
+            // This returns true if there is no error = proceed with the data to next stage or data is good
+            // if this returns false = there are an error on the requested data or something is missing
             return new ValidationResult(errors.Count == 0, errors);
         }
 
@@ -67,7 +69,7 @@ namespace Source.Core.Transaction
             // TODO:
             // make the converting curreny 
 
-
+            // checks if string is null or is just white spaces with input parameters - if so, return false 
             if (string.IsNullOrWhiteSpace(currency))
                 return false;
 
@@ -88,7 +90,7 @@ namespace Source.Core.Transaction
     public class ValidationResult
     {
         public bool IsValid { get; }
-        public IReadOnlyList<string> Errors { get; }
+        public IReadOnlyList<string> Errors { get; }       // read-only list basically
 
         public ValidationResult(bool isValid, IEnumerable<string> errors)
         {
@@ -98,6 +100,7 @@ namespace Source.Core.Transaction
 
         public string GetErrorMessage()
         {
+            // spits out error messages that were collected 
             return string.Join("; ", Errors);
         }
     }
