@@ -5,16 +5,19 @@ using System.Net;
 using System.Text.Json;
 using System.Text;
 using Source.Core.Transaction;
+using Source.Core;
 
 namespace Functions;
 
 public class ProcessPayment
 {
     private readonly ILogger<ProcessPayment> _logger;
+    private readonly MoneyTransferService _transferService;
 
-    public ProcessPayment(ILogger<ProcessPayment> logger)
+    public ProcessPayment(ILogger<ProcessPayment> logger, MoneyTransferService transferService)
     {
         _logger = logger;
+        _transferService = transferService;
     }
 
     [Function("ProcessPayment")]
@@ -22,12 +25,11 @@ public class ProcessPayment
     public async Task<string> Run(
         [HttpTrigger(AuthorizationLevel.Function, "post")] HttpRequestData req)
     {
-        // this handles basic validation, checking if the incoming data has the required data with values
-        // if its either null or empty, the code will complain.
-        _logger.LogInformation("Received payment request");
+        // Handles validation and queues the transfer request
+        _logger.LogInformation("Received payment/transfer request");
 
         string requestBody = await new StreamReader(req.Body).ReadToEndAsync();
-        // checks if the request is null or has white space = fails
+        
         if(string.IsNullOrWhiteSpace(requestBody))
         {
             var badResponse = req.CreateResponse(HttpStatusCode.BadRequest);
@@ -35,24 +37,118 @@ public class ProcessPayment
             return null!;
         }
 
-        var transaction = JsonSerializer.Deserialize<Transaction>(requestBody);
-        // after packing out the json data, this checks if the transaction is null or if the amount cost is under
-        // or equal to 0
-        if (transaction == null || transaction.Amount <= 0)
+        var transferRequest = JsonSerializer.Deserialize<TransferRequest>(requestBody, new JsonSerializerOptions
+        {
+            PropertyNameCaseInsensitive = true
+        });
+        
+        // Validate transfer request
+        if (transferRequest == null || transferRequest.Amount <= 0)
         {
             var badResponse = req.CreateResponse(HttpStatusCode.BadRequest);
-            await badResponse.WriteStringAsync("Invalid transaction data");
+            await badResponse.WriteStringAsync("Invalid transfer data or amount must be greater than zero");
             return null!;
         }
 
-        _logger.LogInformation($"Transaction {transaction.Id} validated. Amount: {transaction.Amount}");
+        if (string.IsNullOrWhiteSpace(transferRequest.FromCardNumber) || 
+            string.IsNullOrWhiteSpace(transferRequest.ToCardNumber))
+        {
+            var badResponse = req.CreateResponse(HttpStatusCode.BadRequest);
+            await badResponse.WriteStringAsync("Source and destination card numbers are required");
+            return null!;
+        }
 
-        // Convert transaction object to JSON for the queue message
-        string messageBody = JsonSerializer.Serialize(transaction);
+        _logger.LogInformation(
+            "Transfer request validated: {Amount} {Currency} from ****{From} to ****{To}",
+            transferRequest.Amount,
+            transferRequest.Currency ?? "USD",
+            transferRequest.FromCardNumber[^4..],
+            transferRequest.ToCardNumber[^4..]
+        );
 
-        // sends the data to service bus queue
-        var response = req.CreateResponse(HttpStatusCode.OK);
-        await response.WriteStringAsync($"Payment processed for card: {transaction.CardNumberMasked}");
+        // Convert transfer request to JSON for the queue message
+        string messageBody = JsonSerializer.Serialize(transferRequest);
+
+        // Send to Service Bus queue for async processing
+        var response = req.CreateResponse(HttpStatusCode.Accepted);
+        await response.WriteAsJsonAsync(new
+        {
+            message = "Transfer request queued for processing",
+            fromCard = $"****{transferRequest.FromCardNumber[^4..]}",
+            toCard = $"****{transferRequest.ToCardNumber[^4..]}",
+            amount = transferRequest.Amount,
+            currency = transferRequest.Currency ?? "USD"
+        });
+        
         return messageBody;
+    }
+
+    [Function("TransferMoney")]
+    public async Task TransferMoneyFromQueue(
+        [ServiceBusTrigger("transactions", Connection = "ServiceBusConnection")] string messageBody)
+    {
+        _logger.LogInformation("Processing transfer from Service Bus queue");
+
+        try
+        {
+            // Deserialize the transaction from queue message
+            var transferRequest = JsonSerializer.Deserialize<TransferRequest>(messageBody, new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true
+            });
+
+            if (transferRequest == null)
+            {
+                _logger.LogError("Failed to deserialize transfer request from queue");
+                throw new InvalidOperationException("Invalid transfer request in queue message");
+            }
+
+            _logger.LogInformation(
+                "Processing transfer: {Amount} {Currency} from {From} to {To}",
+                transferRequest.Amount,
+                transferRequest.Currency ?? "USD",
+                $"****{transferRequest.FromCardNumber[^4..]}",
+                $"****{transferRequest.ToCardNumber[^4..]}"
+            );
+
+            // Execute the money transfer and update database
+            var result = await _transferService.TransferMoneyAsync(
+                transferRequest.FromCardNumber,
+                transferRequest.ToCardNumber,
+                transferRequest.Amount,
+                transferRequest.Currency ?? "USD"
+            );
+
+            if (result.Success)
+            {
+                _logger.LogInformation(
+                    "Transfer completed successfully: {TransactionId} - From balance: {FromBalance}, To balance: {ToBalance}",
+                    result.TransactionId,
+                    result.FromAccountNewBalance,
+                    result.ToAccountNewBalance
+                );
+            }
+            else
+            {
+                _logger.LogWarning(
+                    "Transfer failed: {TransactionId} - {Message}",
+                    result.TransactionId,
+                    result.Message
+                );
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error processing transfer from queue: {Message}", ex.Message);
+            throw; // Re-throw to allow Service Bus retry logic
+        }
+    }
+
+    private class TransferRequest
+    {
+        public string FromCardNumber { get; set; } = string.Empty;
+        public string ToCardNumber { get; set; } = string.Empty;
+        public decimal Amount { get; set; }
+        public string? Currency { get; set; }
     }
 }

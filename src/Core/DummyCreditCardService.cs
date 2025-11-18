@@ -4,9 +4,10 @@ namespace Source.Core
 {
     public class DummyCreditCard
     {
+        public int Id { get; set; }
         public string CardNumber { get; init; } = "";
         public string CardHolderName { get; init; } = "";
-        public decimal Balance { get; init; }
+        public decimal Balance { get; set; }
         public string CardType { get; init; } = "";
         public DateTime ExpiryDate { get; init; }
         public bool IsActive { get; init; } = true;
@@ -25,7 +26,7 @@ namespace Source.Core
                 CardHolderName = "John Doe", 
                 Balance = 5000.00m, 
                 CardType = "Visa",
-                ExpiryDate = DateTime.Now.AddYears(2),
+                ExpiryDate = DateTime.UtcNow.AddYears(2),
                 IsActive = true
             },
             ["5555555555554444"] = new DummyCreditCard 
@@ -34,7 +35,7 @@ namespace Source.Core
                 CardHolderName = "Jane Smith", 
                 Balance = 3500.00m, 
                 CardType = "Mastercard",
-                ExpiryDate = DateTime.Now.AddYears(3),
+                ExpiryDate = DateTime.UtcNow.AddYears(3),
                 IsActive = true
             },
             ["378282246310005"] = new DummyCreditCard 
@@ -43,7 +44,7 @@ namespace Source.Core
                 CardHolderName = "Bob Johnson", 
                 Balance = 10000.00m, 
                 CardType = "American Express",
-                ExpiryDate = DateTime.Now.AddYears(1),
+                ExpiryDate = DateTime.UtcNow.AddYears(1),
                 IsActive = true
             },
 
@@ -54,7 +55,7 @@ namespace Source.Core
                 CardHolderName = "Alice Brown", 
                 Balance = 250.00m, 
                 CardType = "Visa",
-                ExpiryDate = DateTime.Now.AddYears(2),
+                ExpiryDate = DateTime.UtcNow.AddYears(2),
                 IsActive = true
             },
             ["5105105105105100"] = new DummyCreditCard 
@@ -63,7 +64,7 @@ namespace Source.Core
                 CardHolderName = "Charlie Wilson", 
                 Balance = 750.00m, 
                 CardType = "Mastercard",
-                ExpiryDate = DateTime.Now.AddYears(1),
+                ExpiryDate = DateTime.UtcNow.AddYears(1),
                 IsActive = true
             },
 
@@ -74,7 +75,7 @@ namespace Source.Core
                 CardHolderName = "David Lee", 
                 Balance = 25.00m, 
                 CardType = "Visa",
-                ExpiryDate = DateTime.Now.AddYears(2),
+                ExpiryDate = DateTime.UtcNow.AddYears(2),
                 IsActive = true
             },
             ["4000000000000051"] = new DummyCreditCard 
@@ -83,7 +84,7 @@ namespace Source.Core
                 CardHolderName = "Emma Davis", 
                 Balance = 10.50m, 
                 CardType = "Visa",
-                ExpiryDate = DateTime.Now.AddYears(1),
+                ExpiryDate = DateTime.UtcNow.AddYears(1),
                 IsActive = true
             },
 
@@ -94,7 +95,7 @@ namespace Source.Core
                 CardHolderName = "Frank Miller", 
                 Balance = 1000.00m, 
                 CardType = "Visa",
-                ExpiryDate = DateTime.Now.AddYears(2),
+                ExpiryDate = DateTime.UtcNow.AddYears(2),
                 IsActive = false  // Card blocked
             },
             ["4000000000000069"] = new DummyCreditCard 
@@ -103,7 +104,7 @@ namespace Source.Core
                 CardHolderName = "Grace Taylor", 
                 Balance = 500.00m, 
                 CardType = "Visa",
-                ExpiryDate = DateTime.Now.AddMonths(-6), // Expired
+                ExpiryDate = DateTime.UtcNow.AddMonths(-6), // Expired
                 IsActive = true
             }
         };
@@ -122,7 +123,7 @@ namespace Source.Core
         public static bool IsCardValid(string cardNumber)
         {
             var card = GetCard(cardNumber);
-            return card != null && card.IsActive && card.ExpiryDate > DateTime.Now;
+            return card != null && card.IsActive && card.ExpiryDate > DateTime.UtcNow;
         }
 
         public static string GetDeclineReason(string cardNumber)
@@ -135,7 +136,7 @@ namespace Source.Core
             if (!card.IsActive)
                 return "CARD_BLOCKED";
             
-            if (card.ExpiryDate <= DateTime.Now)
+            if (card.ExpiryDate <= DateTime.UtcNow)
                 return "EXPIRED_CARD";
             
             return "APPROVED";

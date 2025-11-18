@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Source.Core.Transaction;
 
 namespace Source.Core.Database
@@ -11,10 +12,16 @@ namespace Source.Core.Database
         }
 
         public DbSet<ProcessedTransaction> ProcessedTransactions { get; set; } = null!;
+        public DbSet<DummyCreditCard> CreditCards { get; set; } = null!;
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
+
+            // UTC DateTime converter for PostgreSQL compatibility
+            var dateTimeConverter = new ValueConverter<DateTime, DateTime>(
+                v => v.ToUniversalTime(),
+                v => DateTime.SpecifyKind(v, DateTimeKind.Utc));
 
             modelBuilder.Entity<ProcessedTransaction>(entity =>
             {
@@ -48,10 +55,12 @@ namespace Source.Core.Database
                 
                 entity.Property(e => e.TransactionTimestamp)
                     .HasColumnName("transaction_timestamp")
+                    .HasConversion(dateTimeConverter)
                     .IsRequired();
                 
                 entity.Property(e => e.ProcessedAt)
                     .HasColumnName("processed_at")
+                    .HasConversion(dateTimeConverter)
                     .IsRequired();
                 
                 entity.Property(e => e.AuthorizationStatus)
@@ -68,6 +77,50 @@ namespace Source.Core.Database
                 
                 entity.HasIndex(e => e.ProcessedAt)
                     .HasDatabaseName("idx_processed_at");
+            });
+
+            modelBuilder.Entity<DummyCreditCard>(entity =>
+            {
+                entity.ToTable("credit_cards");
+                
+                entity.HasKey(e => e.Id);
+                
+                entity.Property(e => e.Id)
+                    .HasColumnName("id")
+                    .ValueGeneratedOnAdd();
+                
+                entity.Property(e => e.CardNumber)
+                    .HasColumnName("card_number")
+                    .HasMaxLength(20)
+                    .IsRequired();
+                
+                entity.Property(e => e.CardHolderName)
+                    .HasColumnName("card_holder_name")
+                    .HasMaxLength(100)
+                    .IsRequired();
+                
+                entity.Property(e => e.Balance)
+                    .HasColumnName("balance")
+                    .HasColumnType("decimal(18,2)")
+                    .IsRequired();
+                
+                entity.Property(e => e.CardType)
+                    .HasColumnName("card_type")
+                    .HasMaxLength(50)
+                    .IsRequired();
+                
+                entity.Property(e => e.ExpiryDate)
+                    .HasColumnName("expiry_date")
+                    .HasConversion(dateTimeConverter)
+                    .IsRequired();
+                
+                entity.Property(e => e.IsActive)
+                    .HasColumnName("is_active")
+                    .IsRequired();
+
+                entity.HasIndex(e => e.CardNumber)
+                    .IsUnique()
+                    .HasDatabaseName("idx_card_number");
             });
         }
     }

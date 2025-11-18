@@ -29,9 +29,13 @@
     <Compile Include="..\Core\TransactionProcessor.cs" Link="Models\TransactionProcessor.cs" />
     <Compile Include="..\Core\DummyCreditCardService.cs" Link="Models\DummyCreditCardService.cs" />
     <Compile Include="..\Core\ProcessedTransaction.cs" Link="Models\ProcessedTransaction.cs" />
+    <Compile Include="..\Core\TransferResult.cs" Link="Models\TransferResult.cs" />
+    <Compile Include="..\Core\MoneyTransferService.cs" Link="Services\MoneyTransferService.cs" />
     <Compile Include="..\Core\Database\ApplicationDbContext.cs" Link="Database\ApplicationDbContext.cs" />
     <Compile Include="..\Core\Database\ITransactionRepository.cs" Link="Database\ITransactionRepository.cs" />
     <Compile Include="..\Core\Database\TransactionRepository.cs" Link="Database\TransactionRepository.cs" />
+    <Compile Include="..\Core\Database\ICreditCardRepository.cs" Link="Database\ICreditCardRepository.cs" />
+    <Compile Include="..\Core\Database\CreditCardRepository.cs" Link="Database\CreditCardRepository.cs" />
   </ItemGroup>
 
 </Project>
