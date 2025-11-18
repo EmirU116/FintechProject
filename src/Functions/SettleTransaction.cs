@@ -6,6 +6,7 @@ using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Logging;
 using Source.Core.Transaction;
 using Source.Core;
+using Source.Core.Database;
 
 
 namespace Source.Functions;
@@ -13,10 +14,12 @@ namespace Source.Functions;
 public class SettleTransaction
 {
     private readonly ILogger<SettleTransaction> _logger;
+    private readonly ITransactionRepository _transactionRepository;
 
-    public SettleTransaction(ILogger<SettleTransaction> logger)
+    public SettleTransaction(ILogger<SettleTransaction> logger, ITransactionRepository transactionRepository)
     {
         _logger = logger;
+        _transactionRepository = transactionRepository;
     }
 
     [Function("SettleTransaction")]
@@ -85,8 +88,31 @@ public class SettleTransaction
         _logger.LogInformation($"Authorization Status: {result.Status}");
         _logger.LogInformation($"Amount authorized: {transaction.Amount} {transaction.Currency}");
         
-        // Add your actual settlement logic here:
-        // - Save transaction to database
+        // Save successful transaction to PostgreSQL database
+        try
+        {
+            var processedTransaction = new ProcessedTransaction
+            {
+                TransactionId = transaction.Id,
+                CardNumberMasked = transaction.CardNumberMasked,
+                Amount = transaction.Amount,
+                Currency = transaction.Currency,
+                TransactionTimestamp = transaction.Timestamp,
+                ProcessedAt = DateTime.UtcNow,
+                AuthorizationStatus = result.Status,
+                ProcessingMessage = result.Message
+            };
+
+            await _transactionRepository.SaveProcessedTransactionAsync(processedTransaction);
+            _logger.LogInformation($"Transaction {transaction.Id} saved to database successfully");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, $"Failed to save transaction {transaction.Id} to database");
+            throw; // Re-throw to handle retry logic at a higher level
+        }
+        
+        // Add your additional settlement logic here:
         // - Send confirmation to merchant
         // - Update audit logs
         // - Send receipt to customer

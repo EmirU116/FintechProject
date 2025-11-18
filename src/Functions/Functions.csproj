@@ -16,6 +16,11 @@
     <PackageReference Include="Microsoft.Azure.Functions.Worker.Extensions.Http.AspNetCore" Version="2.0.2" />
     <PackageReference Include="Microsoft.Azure.Functions.Worker.Extensions.ServiceBus" Version="5.22.2" />
     <PackageReference Include="Microsoft.Azure.Functions.Worker.Sdk" Version="2.0.5" />
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="8.0.4" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="8.0.4">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
   </ItemGroup>
 
   <ItemGroup>
@@ -23,6 +28,10 @@
     <Compile Include="..\Core\TransactionValidator.cs" Link="Models\TransactionValidator.cs" />
     <Compile Include="..\Core\TransactionProcessor.cs" Link="Models\TransactionProcessor.cs" />
     <Compile Include="..\Core\DummyCreditCardService.cs" Link="Models\DummyCreditCardService.cs" />
+    <Compile Include="..\Core\ProcessedTransaction.cs" Link="Models\ProcessedTransaction.cs" />
+    <Compile Include="..\Core\Database\ApplicationDbContext.cs" Link="Database\ApplicationDbContext.cs" />
+    <Compile Include="..\Core\Database\ITransactionRepository.cs" Link="Database\ITransactionRepository.cs" />
+    <Compile Include="..\Core\Database\TransactionRepository.cs" Link="Database\TransactionRepository.cs" />
   </ItemGroup>
 
 </Project>
