@@ -24,17 +24,20 @@ public class SettleTransaction
 
     [Function("SettleTransaction")]
     public async Task Run(
-        [ServiceBusTrigger("transactions", Connection = "ServiceBusConnection")] string message)
+        [ServiceBusTrigger("transactions", Connection = "ServiceBusConnection")] ServiceBusReceivedMessage message,
+        ServiceBusMessageActions messageActions)
     {
-        _logger.LogInformation($"Received transaction message from queue: {message}");
+        var messageBody = message.Body.ToString();
+        _logger.LogInformation($"Received transaction message from queue: {messageBody}");
 
         try
         {
-            var transaction = JsonSerializer.Deserialize<Transaction>(message);
+            var transaction = JsonSerializer.Deserialize<Transaction>(messageBody);
 
             if (transaction == null)
             {
                 _logger.LogWarning("Received invalid transaction payload.");
+                await messageActions.DeadLetterMessageAsync(message, deadLetterReason: "InvalidPayload", deadLetterErrorDescription: "Transaction payload is null or invalid");
                 return;
             }
 
@@ -44,8 +47,7 @@ public class SettleTransaction
             if (!validationResult.IsValid)
             {
                 _logger.LogError($"Transaction validation failed for {transaction.Id}: {validationResult.GetErrorMessage()}");
-                // In a real scenario, you might want to send this to a dead letter queue
-                // or handle the validation failure appropriately
+                await messageActions.DeadLetterMessageAsync(message, deadLetterReason: "ValidationFailed", deadLetterErrorDescription: validationResult.GetErrorMessage());
                 return;
             }
 
@@ -58,24 +60,37 @@ public class SettleTransaction
             {
                 _logger.LogInformation($"Transaction {transaction.Id} authorized successfully: {transactionResult.Message}");
                 
-                // Proceed with settlement processing
-                await ProcessSettlement(transaction, transactionResult);
+                try
+                {
+                    // Proceed with settlement processing
+                    await ProcessSettlement(transaction, transactionResult);
+                    
+                    // Complete message only after successful settlement
+                    await messageActions.CompleteMessageAsync(message);
+                    _logger.LogInformation($"Transaction {transaction.Id} completed and settled successfully");
+                }
+                catch (Exception settlementEx)
+                {
+                    _logger.LogError(settlementEx, $"Settlement processing failed for transaction {transaction.Id}");
+                    await messageActions.DeadLetterMessageAsync(message, deadLetterReason: "SettlementFailed", deadLetterErrorDescription: settlementEx.Message);
+                }
             }
             else
             {
                 _logger.LogError($"Transaction {transaction.Id} declined: {transactionResult.Message}");
-                // In a real scenario, you might want to send this to a declined transactions queue
-                // or handle the decline reason appropriately
-                return;
+                await messageActions.DeadLetterMessageAsync(message, deadLetterReason: "TransactionDeclined", deadLetterErrorDescription: transactionResult.Message);
             }
         }
         catch (JsonException ex)
         {
             _logger.LogError($"Failed to deserialize transaction message: {ex.Message}");
+            await messageActions.DeadLetterMessageAsync(message, deadLetterReason: "DeserializationError", deadLetterErrorDescription: ex.Message);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error processing transaction settlement");
+            _logger.LogError(ex, "Unexpected error processing transaction settlement");
+            // Rethrow to let Azure Functions retry mechanism handle unexpected errors
+            throw;
         }
     }
 
