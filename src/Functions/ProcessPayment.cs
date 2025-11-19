@@ -3,8 +3,6 @@ using Microsoft.Azure.Functions.Worker.Http;
 using Microsoft.Extensions.Logging;
 using System.Net;
 using System.Text.Json;
-using System.Text;
-using Source.Core.Transaction;
 using Source.Core;
 
 namespace Functions;
@@ -21,10 +19,11 @@ public class ProcessPayment
     }
 
     [Function("ProcessPayment")]
-    public async Task<HttpResponseData> Run(
+    [ServiceBusOutput("transactions", Connection = "ServiceBusConnection")]
+    public async Task<string> Run(
         [HttpTrigger(AuthorizationLevel.Function, "post")] HttpRequestData req)
     {
-        // Process transfer synchronously (no Service Bus dependency)
+        // Validates request and queues to Service Bus for async processing
         _logger.LogInformation("Received payment/transfer request");
 
         string requestBody = await new StreamReader(req.Body).ReadToEndAsync();
@@ -33,7 +32,7 @@ public class ProcessPayment
         {
             var badResponse = req.CreateResponse(HttpStatusCode.BadRequest);
             await badResponse.WriteStringAsync("Empty request body");
-            return badResponse;
+            return null!;
         }
 
         var transferRequest = JsonSerializer.Deserialize<TransferRequest>(requestBody, new JsonSerializerOptions
@@ -46,7 +45,7 @@ public class ProcessPayment
         {
             var badResponse = req.CreateResponse(HttpStatusCode.BadRequest);
             await badResponse.WriteStringAsync("Invalid transfer data or amount must be greater than zero");
-            return badResponse;
+            return null!;
         }
 
         if (string.IsNullOrWhiteSpace(transferRequest.FromCardNumber) || 
@@ -54,56 +53,34 @@ public class ProcessPayment
         {
             var badResponse = req.CreateResponse(HttpStatusCode.BadRequest);
             await badResponse.WriteStringAsync("Source and destination card numbers are required");
-            return badResponse;
+            return null!;
         }
 
         _logger.LogInformation(
-            "Processing transfer: {Amount} {Currency} from ****{From} to ****{To}",
+            "Transfer request validated: {Amount} {Currency} from ****{From} to ****{To}",
             transferRequest.Amount,
             transferRequest.Currency ?? "USD",
             transferRequest.FromCardNumber[^4..],
             transferRequest.ToCardNumber[^4..]
         );
 
-        // Execute transfer synchronously
-        var result = await _transferService.TransferMoneyAsync(
-            transferRequest.FromCardNumber,
-            transferRequest.ToCardNumber,
-            transferRequest.Amount,
-            transferRequest.Currency ?? "USD"
-        );
+        // Return message body - Service Bus output binding will queue it
+        string messageBody = JsonSerializer.Serialize(transferRequest);
+        
+        _logger.LogInformation("Returning transfer request for Service Bus queue");
 
-        // Return result immediately
-        if (result.Success)
+        var response = req.CreateResponse(HttpStatusCode.Accepted);
+        await response.WriteAsJsonAsync(new
         {
-            var response = req.CreateResponse(HttpStatusCode.OK);
-            await response.WriteAsJsonAsync(new
-            {
-                success = true,
-                message = "Transfer completed successfully",
-                transactionId = result.TransactionId,
-                fromCard = $"****{transferRequest.FromCardNumber[^4..]}",
-                toCard = $"****{transferRequest.ToCardNumber[^4..]}",
-                amount = transferRequest.Amount,
-                currency = transferRequest.Currency ?? "USD",
-                fromBalance = result.FromAccountNewBalance,
-                toBalance = result.ToAccountNewBalance
-            });
-            return response;
-        }
-        else
-        {
-            var response = req.CreateResponse(HttpStatusCode.BadRequest);
-            await response.WriteAsJsonAsync(new
-            {
-                success = false,
-                message = result.Message,
-                transactionId = result.TransactionId,
-                fromCard = $"****{transferRequest.FromCardNumber[^4..]}",
-                toCard = $"****{transferRequest.ToCardNumber[^4..]}"
-            });
-            return response;
-        }
+            success = true,
+            message = "Transfer request queued for processing",
+            fromCard = $"****{transferRequest.FromCardNumber[^4..]}",
+            toCard = $"****{transferRequest.ToCardNumber[^4..]}",
+            amount = transferRequest.Amount,
+            currency = transferRequest.Currency ?? "USD"
+        });
+
+        return messageBody;
     }
 
     [Function("TransferMoney")]
