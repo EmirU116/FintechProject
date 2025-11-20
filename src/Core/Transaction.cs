@@ -3,11 +3,15 @@ namespace Source.Core.Transaction
 {
     public record Transaction
     {
-        public string Id { get; init; } = Guid.NewGuid().ToString();
-        public string CardNumberMasked => $"****-****-****-{CardNumber[^4..]}";
-        public string CardNumber { get; init; } = "";
-        public decimal Amount { get; init; }
-        public string Currency { get; init; } = "USD";
-        public DateTime Timestamp { get; init; } = DateTime.UtcNow;
+        public Guid Id { get; set; }
+        public string CardNumber { get; set; } = string.Empty;
+        public string CardNumberMasked { get; set; } = string.Empty;
+        public decimal Amount { get; set; }
+        public string Currency { get; set; } = "USD";
+        public DateTime Timestamp { get; set; }
+        
+        // Add fields for transfers (destination card)
+        public string? ToCardNumber { get; set; }
+        public string? ToCardNumberMasked { get; set; }
     }
 }

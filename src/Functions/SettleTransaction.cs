@@ -7,7 +7,8 @@ using Microsoft.Extensions.Logging;
 using Source.Core.Transaction;
 using Source.Core;
 using Source.Core.Database;
-
+using Microsoft.Azure.Functions.Worker.Http;
+using System.Net;
 
 namespace Source.Functions;
 
@@ -15,124 +16,164 @@ public class SettleTransaction
 {
     private readonly ILogger<SettleTransaction> _logger;
     private readonly ITransactionRepository _transactionRepository;
+    private readonly MoneyTransferService _transferService;
 
-    public SettleTransaction(ILogger<SettleTransaction> logger, ITransactionRepository transactionRepository)
+    public SettleTransaction(
+        ILogger<SettleTransaction> logger, 
+        ITransactionRepository transactionRepository,
+        MoneyTransferService transferService)
     {
         _logger = logger;
         _transactionRepository = transactionRepository;
+        _transferService = transferService;
     }
-
+    
     [Function("SettleTransaction")]
     public async Task Run(
-        [ServiceBusTrigger("transactions", Connection = "ServiceBusConnection")] ServiceBusReceivedMessage message,
-        ServiceBusMessageActions messageActions)
+        [ServiceBusTrigger("transactions", Connection = "ServiceBusConnection")] string messageBody)
     {
-        var messageBody = message.Body.ToString();
-        _logger.LogInformation($"Received transaction message from queue: {messageBody}");
+        _logger.LogInformation("Processing transaction from Service Bus queue");
 
         try
         {
-            var transaction = JsonSerializer.Deserialize<Transaction>(messageBody);
+            var transaction = JsonSerializer.Deserialize<TransactionMessage>(messageBody, new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true
+            });
 
             if (transaction == null)
             {
-                _logger.LogWarning("Received invalid transaction payload.");
-                await messageActions.DeadLetterMessageAsync(message, deadLetterReason: "InvalidPayload", deadLetterErrorDescription: "Transaction payload is null or invalid");
-                return;
+                _logger.LogError("Failed to deserialize transaction from queue");
+                throw new InvalidOperationException("Invalid transaction in queue message");
             }
 
-            // Validate the transaction using the validation function
-            var validationResult = TransactionValidator.ValidateTransaction(transaction);
-            
-            if (!validationResult.IsValid)
-            {
-                _logger.LogError($"Transaction validation failed for {transaction.Id}: {validationResult.GetErrorMessage()}");
-                await messageActions.DeadLetterMessageAsync(message, deadLetterReason: "ValidationFailed", deadLetterErrorDescription: validationResult.GetErrorMessage());
-                return;
-            }
+            _logger.LogInformation("Received transaction message from queue: {Message}", messageBody);
 
-            _logger.LogInformation($"Transaction {transaction.Id} passed validation");
-
-            // Process the transaction through payment gateway (no balance checking needed)
-            var transactionResult = await TransactionProcessor.ProcessTransaction(transaction);
-            
-            if (transactionResult.IsSuccessful)
+            // Check if this is a transfer (has destination card)
+            if (!string.IsNullOrEmpty(transaction.ToCardNumber))
             {
-                _logger.LogInformation($"Transaction {transaction.Id} authorized successfully: {transactionResult.Message}");
-                
-                try
+                _logger.LogInformation(
+                    "Processing money transfer: {Amount} {Currency} from {From} to {To}",
+                    transaction.Amount,
+                    transaction.Currency,
+                    transaction.CardNumberMasked,
+                    transaction.ToCardNumberMasked
+                );
+
+                // Execute the money transfer
+                var result = await _transferService.TransferMoneyAsync(
+                    transaction.CardNumber,
+                    transaction.ToCardNumber,
+                    transaction.Amount,
+                    transaction.Currency
+                );
+
+                if (result.Success)
                 {
-                    // Proceed with settlement processing
-                    await ProcessSettlement(transaction, transactionResult);
-                    
-                    // Complete message only after successful settlement
-                    await messageActions.CompleteMessageAsync(message);
-                    _logger.LogInformation($"Transaction {transaction.Id} completed and settled successfully");
+                    _logger.LogInformation(
+                        "Transfer completed successfully: {TransactionId} - From balance: {FromBalance}, To balance: {ToBalance}",
+                        result.TransactionId,
+                        result.FromAccountNewBalance,
+                        result.ToAccountNewBalance
+                    );
                 }
-                catch (Exception settlementEx)
+                else
                 {
-                    _logger.LogError(settlementEx, $"Settlement processing failed for transaction {transaction.Id}");
-                    await messageActions.DeadLetterMessageAsync(message, deadLetterReason: "SettlementFailed", deadLetterErrorDescription: settlementEx.Message);
+                    _logger.LogWarning(
+                        "Transfer failed: {TransactionId} - {Message}",
+                        result.TransactionId,
+                        result.Message
+                    );
                 }
             }
             else
             {
-                _logger.LogError($"Transaction {transaction.Id} declined: {transactionResult.Message}");
-                await messageActions.DeadLetterMessageAsync(message, deadLetterReason: "TransactionDeclined", deadLetterErrorDescription: transactionResult.Message);
+                _logger.LogInformation("Processing regular transaction for {Card}", transaction.CardNumberMasked);
+                // Handle regular transactions here if needed
             }
         }
-        catch (JsonException ex)
-        {
-            _logger.LogError($"Failed to deserialize transaction message: {ex.Message}");
-            await messageActions.DeadLetterMessageAsync(message, deadLetterReason: "DeserializationError", deadLetterErrorDescription: ex.Message);
-        }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Unexpected error processing transaction settlement");
-            // Rethrow to let Azure Functions retry mechanism handle unexpected errors
-            throw;
+            _logger.LogError(ex, "Error processing transaction from queue: {Message}", ex.Message);
+            throw; // Re-throw to allow Service Bus retry logic
         }
-    }
+    } 
 
-    private async Task ProcessSettlement(Transaction transaction, TransactionProcessor.TransactionResult result)
+    // [Function("SettleTransaction")]
+    // public async Task Run(
+    //     [ServiceBusTrigger("transactions", Connection = "ServiceBusConnection")] ServiceBusReceivedMessage message,
+    //     ServiceBusMessageActions messageActions)
+    // {
+    //            _logger.LogInformation("Received payment/transfer request");
+
+    //     string requestBody = await new StreamReader(req.Body).ReadToEndAsync();
+        
+    //     if(string.IsNullOrWhiteSpace(requestBody))
+    //     {
+    //         _logger.LogWarning("Empty request body received");
+    //         return string.Empty;
+    //     }
+
+    //     var transferRequest = JsonSerializer.Deserialize<TransferRequest>(requestBody, new JsonSerializerOptions
+    //     {
+    //         PropertyNameCaseInsensitive = true
+    //     });
+
+    //     if (transferRequest == null || transferRequest.Amount <= 0)
+    //     {
+    //         _logger.LogWarning("Invalid transfer request or amount");
+    //         return string.Empty;
+    //     }
+
+    //     if (string.IsNullOrWhiteSpace(transferRequest.FromCardNumber) || 
+    //         string.IsNullOrWhiteSpace(transferRequest.ToCardNumber))
+    //     {
+    //         _logger.LogWarning("Missing card numbers in request");
+    //         return string.Empty;
+    //     }
+
+    //     // Validate and check balances
+    //     var validationResult = await _transferService.ValidateTransferAsync(
+    //         transferRequest.FromCardNumber,
+    //         transferRequest.ToCardNumber,
+    //         transferRequest.Amount
+    //     );
+
+    //     if (!validationResult.Success)
+    //     {
+    //         _logger.LogWarning($"Transfer validation failed: {validationResult.Message}");
+    //         return string.Empty;
+    //     }
+
+    //     // Convert TransferRequest to Transaction format for SettleTransaction
+    //     var transaction = new Transaction
+    //     {
+    //         Id = Guid.NewGuid(),
+    //         CardNumber = transferRequest.FromCardNumber,
+    //         CardNumberMasked = $"****-****-****-{transferRequest.FromCardNumber[^4..]}",
+    //         Amount = transferRequest.Amount,
+    //         Currency = transferRequest.Currency ?? "USD",
+    //         Timestamp = DateTime.UtcNow,
+    //         ToCardNumber = transferRequest.ToCardNumber, // Add destination card
+    //         ToCardNumberMasked = $"****-****-****-{transferRequest.ToCardNumber[^4..]}"
+    //     };
+
+    //     var message = JsonSerializer.Serialize(transaction);
+        
+    //     _logger.LogInformation($"Transfer validated and queued: {transferRequest.Amount} {transferRequest.Currency ?? "USD"} from {transaction.CardNumberMasked} to {transaction.ToCardNumberMasked}");
+
+    //     return message; 
+    // }
+
+    private class TransactionMessage
     {
-        // Simulate async settlement processing
-        _logger.LogInformation($"Processing settlement for transaction {transaction.Id}");
-        
-        // Log the transaction details
-        _logger.LogInformation($"Authorization Status: {result.Status}");
-        _logger.LogInformation($"Amount authorized: {transaction.Amount} {transaction.Currency}");
-        
-        // Save successful transaction to PostgreSQL database
-        try
-        {
-            var processedTransaction = new ProcessedTransaction
-            {
-                TransactionId = transaction.Id,
-                CardNumberMasked = transaction.CardNumberMasked,
-                Amount = transaction.Amount,
-                Currency = transaction.Currency,
-                TransactionTimestamp = transaction.Timestamp,
-                ProcessedAt = DateTime.UtcNow,
-                AuthorizationStatus = result.Status,
-                ProcessingMessage = result.Message
-            };
-
-            await _transactionRepository.SaveProcessedTransactionAsync(processedTransaction);
-            _logger.LogInformation($"Transaction {transaction.Id} saved to database successfully");
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, $"Failed to save transaction {transaction.Id} to database");
-            throw; // Re-throw to handle retry logic at a higher level
-        }
-        
-        // Add your additional settlement logic here:
-        // - Send confirmation to merchant
-        // - Update audit logs
-        // - Send receipt to customer
-        await Task.Delay(100); // Simulate processing time
-        
-        _logger.LogInformation($"Successfully settled transaction {transaction.Id} with authorization status: {result.Status}");
+        public Guid Id { get; set; }
+        public string CardNumber { get; set; } = string.Empty;
+        public string CardNumberMasked { get; set; } = string.Empty;
+        public decimal Amount { get; set; }
+        public string Currency { get; set; } = "USD";
+        public DateTime Timestamp { get; set; }
+        public string? ToCardNumber { get; set; }
+        public string? ToCardNumberMasked { get; set; }
     }
 }

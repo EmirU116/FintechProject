@@ -36,7 +36,7 @@ namespace Source.Core.Transaction
             }
 
             // Validate ID - must not be empty
-            if (string.IsNullOrWhiteSpace(transaction.Id))
+            if (transaction.Id == Guid.Empty)
             {
                 errors.Add("Transaction ID cannot be empty");
             }
