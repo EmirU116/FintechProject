@@ -32,7 +32,8 @@ public class SettleTransaction
     public async Task Run(
         [ServiceBusTrigger("transactions", Connection = "ServiceBusConnection")] string messageBody)
     {
-        _logger.LogInformation("Processing transaction from Service Bus queue");
+        _logger.LogInformation("🔵 ═══ SERVICE BUS TRIGGER FIRED ═══");
+        _logger.LogInformation("🔵 Processing transaction from Service Bus queue");
 
         try
         {
@@ -47,13 +48,14 @@ public class SettleTransaction
                 throw new InvalidOperationException("Invalid transaction in queue message");
             }
 
-            _logger.LogInformation("Received transaction message from queue: {Message}", messageBody);
+            _logger.LogInformation("🔵 Received transaction message from queue");
+            _logger.LogInformation("🔵 Transaction ID: {TransactionId}", transaction.Id);
 
             // Check if this is a transfer (has destination card)
             if (!string.IsNullOrEmpty(transaction.ToCardNumber))
             {
                 _logger.LogInformation(
-                    "Processing money transfer: {Amount} {Currency} from {From} to {To}",
+                    "🔵 Processing money transfer: {Amount} {Currency} from {From} to {To}",
                     transaction.Amount,
                     transaction.Currency,
                     transaction.CardNumberMasked,
@@ -71,16 +73,20 @@ public class SettleTransaction
                 if (result.Success)
                 {
                     _logger.LogInformation(
-                        "Transfer completed successfully: {TransactionId} - From balance: {FromBalance}, To balance: {ToBalance}",
-                        result.TransactionId,
+                        "🔵 ✓ Transfer completed successfully: {TransactionId}",
+                        result.TransactionId
+                    );
+                    _logger.LogInformation(
+                        "🔵 ✓ From balance: {FromBalance} | To balance: {ToBalance}",
                         result.FromAccountNewBalance,
                         result.ToAccountNewBalance
                     );
+                    _logger.LogInformation("🔵 ✓ Database updated successfully");
                 }
                 else
                 {
                     _logger.LogWarning(
-                        "Transfer failed: {TransactionId} - {Message}",
+                        "🔵 ✗ Transfer failed: {TransactionId} - {Message}",
                         result.TransactionId,
                         result.Message
                     );

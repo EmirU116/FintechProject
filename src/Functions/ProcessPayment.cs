@@ -22,7 +22,9 @@ public class ProcessPayment
     public async Task<ProcessPaymentOutput> Run(
         [HttpTrigger(AuthorizationLevel.Function, "post")] HttpRequestData req)
     {
-        _logger.LogInformation("Received payment/transfer request");
+        var traceId = Guid.NewGuid().ToString("N")[..8];
+        _logger.LogInformation("🟢 [TRACE:{TraceId}] ═══ HTTP TRIGGER ENTRY POINT ═══", traceId);
+        _logger.LogInformation("🟢 [TRACE:{TraceId}] Received payment/transfer request", traceId);
 
         string requestBody = await new StreamReader(req.Body).ReadToEndAsync();
         
@@ -56,10 +58,11 @@ public class ProcessPayment
 
         // Basic validation will be done by SettleTransaction
         // We only do minimal pre-validation here to catch obvious errors
-        _logger.LogInformation("Basic validation passed, queuing for detailed processing");
+        _logger.LogInformation("🟢 [TRACE:{TraceId}] Basic validation passed, queuing for detailed processing", traceId);
 
         _logger.LogInformation(
-            "Transfer request validated: {Amount} {Currency} from ****{From} to ****{To}",
+            "🟢 [TRACE:{TraceId}] Transfer request validated: {Amount} {Currency} from ****{From} to ****{To}",
+            traceId,
             transferRequest.Amount,
             transferRequest.Currency ?? "USD",
             transferRequest.FromCardNumber[^4..],
@@ -81,7 +84,8 @@ public class ProcessPayment
 
         string messageBody = JsonSerializer.Serialize(transaction);
         
-        _logger.LogInformation("Transfer request queued with ID: {TransactionId}", transaction.Id);
+        _logger.LogInformation("🟢 [TRACE:{TraceId}] Transfer request queued with Transaction ID: {TransactionId}", traceId, transaction.Id);
+        _logger.LogInformation("🟢 [TRACE:{TraceId}] Message sent to Azure Service Bus queue 'transactions'", traceId);
 
         var response = req.CreateResponse(HttpStatusCode.Accepted);
         await response.WriteAsJsonAsync(new
@@ -89,11 +93,14 @@ public class ProcessPayment
             success = true,
             message = "Transfer request queued for processing",
             transactionId = transaction.Id,
+            traceId = traceId,
             fromCard = transaction.CardNumberMasked,
             toCard = transaction.ToCardNumberMasked,
             amount = transaction.Amount,
             currency = transaction.Currency
         });
+
+        _logger.LogInformation("🟢 [TRACE:{TraceId}] HTTP response sent to client", traceId);
 
         return new ProcessPaymentOutput 
         { 
