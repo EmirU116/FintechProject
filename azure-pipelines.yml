@@ -1,0 +1,216 @@
+# Azure DevOps Pipeline Configuration
+# Alternative to GitHub Actions for teams using Azure DevOps
+
+trigger:
+  branches:
+    include:
+    - main
+    - test/unit-testing
+  paths:
+    exclude:
+    - docs/*
+    - README.md
+
+pr:
+  branches:
+    include:
+    - main
+
+variables:
+  buildConfiguration: 'Release'
+  dotnetVersion: '8.0.x'
+  azureSubscription: 'Azure-Service-Connection' # Configure this in Azure DevOps
+  resourceGroupName: 'fintech-rg'
+  location: 'eastus'
+  functionAppName: 'event-payment-func'
+
+stages:
+- stage: Build
+  displayName: 'Build and Test'
+  jobs:
+  - job: BuildJob
+    displayName: 'Build Solution'
+    pool:
+      vmImage: 'ubuntu-latest'
+    
+    steps:
+    - task: UseDotNet@2
+      displayName: 'Use .NET $(dotnetVersion)'
+      inputs:
+        version: $(dotnetVersion)
+        packageType: sdk
+
+    - task: DotNetCoreCLI@2
+      displayName: 'Restore NuGet packages'
+      inputs:
+        command: 'restore'
+        projects: 'FintechProject.sln'
+
+    - task: DotNetCoreCLI@2
+      displayName: 'Build solution'
+      inputs:
+        command: 'build'
+        projects: 'FintechProject.sln'
+        arguments: '--configuration $(buildConfiguration) --no-restore'
+
+    - task: DotNetCoreCLI@2
+      displayName: 'Run unit tests'
+      inputs:
+        command: 'test'
+        projects: 'test/FintechProject.Tests/FintechProject.Tests.csproj'
+        arguments: '--configuration $(buildConfiguration) --no-build --logger trx --collect:"XPlat Code Coverage"'
+        publishTestResults: true
+
+    - task: PublishCodeCoverageResults@2
+      displayName: 'Publish code coverage'
+      inputs:
+        summaryFileLocation: '$(Agent.TempDirectory)/**/coverage.cobertura.xml'
+
+    - task: DotNetCoreCLI@2
+      displayName: 'Publish Azure Functions'
+      inputs:
+        command: 'publish'
+        publishWebProjects: false
+        projects: 'src/Functions/Functions.csproj'
+        arguments: '--configuration $(buildConfiguration) --output $(Build.ArtifactStagingDirectory)/functions'
+        zipAfterPublish: true
+
+    - publish: '$(Build.ArtifactStagingDirectory)/functions'
+      displayName: 'Publish function app artifact'
+      artifact: 'drop-functions'
+
+    - publish: 'infra'
+      displayName: 'Publish infrastructure artifact'
+      artifact: 'drop-infra'
+
+    - publish: 'database'
+      displayName: 'Publish database scripts'
+      artifact: 'drop-database'
+
+- stage: DeployInfrastructure
+  displayName: 'Deploy Infrastructure'
+  dependsOn: Build
+  condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+  jobs:
+  - deployment: DeployInfra
+    displayName: 'Deploy Azure Resources'
+    pool:
+      vmImage: 'ubuntu-latest'
+    environment: 'production'
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - download: current
+            artifact: drop-infra
+            displayName: 'Download infrastructure artifacts'
+
+          - task: AzureCLI@2
+            displayName: 'Create Resource Group'
+            inputs:
+              azureSubscription: $(azureSubscription)
+              scriptType: 'bash'
+              scriptLocation: 'inlineScript'
+              inlineScript: |
+                az group create \
+                  --name $(resourceGroupName) \
+                  --location $(location)
+
+          - task: AzureResourceManagerTemplateDeployment@3
+            displayName: 'Deploy Bicep template'
+            name: bicepDeploy
+            inputs:
+              deploymentScope: 'Resource Group'
+              azureResourceManagerConnection: $(azureSubscription)
+              subscriptionId: $(subscriptionId)
+              action: 'Create Or Update Resource Group'
+              resourceGroupName: $(resourceGroupName)
+              location: $(location)
+              templateLocation: 'Linked artifact'
+              csmFile: '$(Pipeline.Workspace)/drop-infra/main.bicep'
+              overrideParameters: '-functionAppName $(functionAppName)'
+              deploymentMode: 'Incremental'
+              deploymentOutputs: 'bicepOutputs'
+
+          - task: PowerShell@2
+            displayName: 'Parse Bicep outputs'
+            inputs:
+              targetType: 'inline'
+              script: |
+                $outputs = ConvertFrom-Json '$(bicepOutputs)'
+                $serviceBusConnection = $outputs.serviceBusConnectionString.value
+                Write-Host "##vso[task.setvariable variable=ServiceBusConnectionString;issecret=true]$serviceBusConnection"
+
+- stage: DeployFunctionApp
+  displayName: 'Deploy Function App'
+  dependsOn: DeployInfrastructure
+  condition: succeeded()
+  jobs:
+  - deployment: DeployFunction
+    displayName: 'Deploy Azure Functions'
+    pool:
+      vmImage: 'ubuntu-latest'
+    environment: 'production'
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - download: current
+            artifact: drop-functions
+            displayName: 'Download function app artifact'
+
+          - task: AzureFunctionApp@1
+            displayName: 'Deploy to Azure Functions'
+            inputs:
+              azureSubscription: $(azureSubscription)
+              appType: 'functionAppLinux'
+              appName: $(functionAppName)
+              package: '$(Pipeline.Workspace)/drop-functions/**/*.zip'
+              runtimeStack: 'DOTNET-ISOLATED|8.0'
+              appSettings: |
+                -ServiceBusConnection "$(ServiceBusConnectionString)"
+                -PostgresConnection "$(PostgresConnectionString)"
+                -FUNCTIONS_WORKER_RUNTIME "dotnet-isolated"
+                -AzureWebJobsStorage__accountName "$(StorageAccountName)"
+
+- stage: DeployDatabase
+  displayName: 'Deploy Database Changes'
+  dependsOn: Build
+  condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+  jobs:
+  - job: RunMigrations
+    displayName: 'Run Database Migrations'
+    pool:
+      vmImage: 'ubuntu-latest'
+    
+    steps:
+    - download: current
+      artifact: drop-database
+      displayName: 'Download database scripts'
+
+    - task: Bash@3
+      displayName: 'Install PostgreSQL client'
+      inputs:
+        targetType: 'inline'
+        script: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+
+    - task: Bash@3
+      displayName: 'Run database setup'
+      env:
+        PGPASSWORD: $(PostgresPassword)
+      inputs:
+        targetType: 'inline'
+        script: |
+          psql "$(PostgresConnectionString)" -f $(Pipeline.Workspace)/drop-database/setup.sql
+          psql "$(PostgresConnectionString)" -f $(Pipeline.Workspace)/drop-database/add_credit_cards_table.sql
+
+    - task: Bash@3
+      displayName: 'Verify database'
+      env:
+        PGPASSWORD: $(PostgresPassword)
+      inputs:
+        targetType: 'inline'
+        script: |
+          psql "$(PostgresConnectionString)" -f $(Pipeline.Workspace)/drop-database/check_database.sql
