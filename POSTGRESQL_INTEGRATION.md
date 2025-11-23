@@ -77,6 +77,12 @@ curl -X POST http://localhost:7071/api/ProcessPayment \
   -H "Content-Type: application/json" \
   -d '{"cardNumber":"4532015112830366","amount":99.99,"currency":"USD"}'
 ```
+or 
+
+```bash
+curl -X POST http://localhost:7071/api/ProcessPayment -H "Content-Type: application/json" -d '{\"fromCardNumber\":\"4111111111111111\",\"toCardNumber\":\"5555555555554444\",\"amount\":5,\"currency\":\"USD\"}'
+```
+
 
 ### View processed transactions:
 ```bash
