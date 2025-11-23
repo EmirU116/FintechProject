@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("FintechProject.Tests")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+756fad3847b3efdee35b75de3f4f6d41dc567a16")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+cb6f176c6fb49b22f6af19c1c0a4754628acde15")]
 [assembly: System.Reflection.AssemblyProductAttribute("FintechProject.Tests")]
 [assembly: System.Reflection.AssemblyTitleAttribute("FintechProject.Tests")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
