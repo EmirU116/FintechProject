@@ -19,6 +19,10 @@ env:
   DOTNET_VERSION: '8.0.x'
   AZURE_FUNCTIONAPP_PACKAGE_PATH: './src/Functions'
 
+permissions:
+  contents: read
+  id-token: write
+
 jobs:
   build:
     name: Build Function App
