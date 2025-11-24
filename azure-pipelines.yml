@@ -83,9 +83,10 @@ stages:
       displayName: 'Publish infrastructure artifact'
       artifact: 'drop-infra'
 
-    - publish: 'database'
-      displayName: 'Publish database scripts'
-      artifact: 'drop-database'
+    # Database scripts artifact disabled - using local PostgreSQL
+    # - publish: 'database'
+    #   displayName: 'Publish database scripts'
+    #   artifact: 'drop-database'
 
 - stage: DeployInfrastructure
   displayName: 'Deploy Infrastructure'
@@ -169,48 +170,51 @@ stages:
               runtimeStack: 'DOTNET-ISOLATED|8.0'
               appSettings: |
                 -ServiceBusConnection "$(ServiceBusConnectionString)"
-                -PostgresConnection "$(PostgresConnectionString)"
                 -FUNCTIONS_WORKER_RUNTIME "dotnet-isolated"
                 -AzureWebJobsStorage__accountName "$(StorageAccountName)"
+                # PostgresConnection removed - using local database
 
-- stage: DeployDatabase
-  displayName: 'Deploy Database Changes'
-  dependsOn: Build
-  condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
-  jobs:
-  - job: RunMigrations
-    displayName: 'Run Database Migrations'
-    pool:
-      vmImage: 'ubuntu-latest'
-    
-    steps:
-    - download: current
-      artifact: drop-database
-      displayName: 'Download database scripts'
-
-    - task: Bash@3
-      displayName: 'Install PostgreSQL client'
-      inputs:
-        targetType: 'inline'
-        script: |
-          sudo apt-get update
-          sudo apt-get install -y postgresql-client
-
-    - task: Bash@3
-      displayName: 'Run database setup'
-      env:
-        PGPASSWORD: $(PostgresPassword)
-      inputs:
-        targetType: 'inline'
-        script: |
-          psql "$(PostgresConnectionString)" -f $(Pipeline.Workspace)/drop-database/setup.sql
-          psql "$(PostgresConnectionString)" -f $(Pipeline.Workspace)/drop-database/add_credit_cards_table.sql
-
-    - task: Bash@3
-      displayName: 'Verify database'
-      env:
-        PGPASSWORD: $(PostgresPassword)
-      inputs:
-        targetType: 'inline'
-        script: |
-          psql "$(PostgresConnectionString)" -f $(Pipeline.Workspace)/drop-database/check_database.sql
+# Database deployment stage disabled - using local PostgreSQL database
+# Uncomment and configure when migrating to Azure PostgreSQL Flexible Server
+#
+# - stage: DeployDatabase
+#   displayName: 'Deploy Database Changes'
+#   dependsOn: Build
+#   condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+#   jobs:
+#   - job: RunMigrations
+#     displayName: 'Run Database Migrations'
+#     pool:
+#       vmImage: 'ubuntu-latest'
+#     
+#     steps:
+#     - download: current
+#       artifact: drop-database
+#       displayName: 'Download database scripts'
+#
+#     - task: Bash@3
+#       displayName: 'Install PostgreSQL client'
+#       inputs:
+#         targetType: 'inline'
+#         script: |
+#           sudo apt-get update
+#           sudo apt-get install -y postgresql-client
+#
+#     - task: Bash@3
+#       displayName: 'Run database setup'
+#       env:
+#         PGPASSWORD: $(PostgresPassword)
+#       inputs:
+#         targetType: 'inline'
+#         script: |
+#           psql "$(PostgresConnectionString)" -f $(Pipeline.Workspace)/drop-database/setup.sql
+#           psql "$(PostgresConnectionString)" -f $(Pipeline.Workspace)/drop-database/add_credit_cards_table.sql
+#
+#     - task: Bash@3
+#       displayName: 'Verify database'
+#       env:
+#         PGPASSWORD: $(PostgresPassword)
+#       inputs:
+#         targetType: 'inline'
+#         script: |
+#           psql "$(PostgresConnectionString)" -f $(Pipeline.Workspace)/drop-database/check_database.sql

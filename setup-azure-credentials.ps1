@@ -101,13 +101,15 @@ Write-Host $credentials -ForegroundColor White
 Write-Host "   ----------------------------------------"
 Write-Host ""
 
-Write-Host "2. POSTGRES_CONNECTION_STRING" -ForegroundColor Cyan
+Write-Host "2. POSTGRES_CONNECTION_STRING (OPTIONAL - for Azure PostgreSQL)" -ForegroundColor Cyan
+Write-Host "   ⚠️  SKIP THIS if using local PostgreSQL database" -ForegroundColor Yellow
 Write-Host "   Format: postgresql://username:password@hostname:5432/database" -ForegroundColor Gray
 Write-Host "   Example: postgresql://fintech_user:mypassword@myserver.postgres.database.azure.com:5432/fintech_db" -ForegroundColor Gray
 Write-Host ""
 
-Write-Host "3. POSTGRES_PASSWORD" -ForegroundColor Cyan
-Write-Host "   Your PostgreSQL database password" -ForegroundColor Gray
+Write-Host "3. POSTGRES_PASSWORD (OPTIONAL - for Azure PostgreSQL)" -ForegroundColor Cyan
+Write-Host "   ⚠️  SKIP THIS if using local PostgreSQL database" -ForegroundColor Yellow
+Write-Host "   Your PostgreSQL database password (only needed for Azure PostgreSQL)" -ForegroundColor Gray
 Write-Host ""
 
 Write-Host "4. STORAGE_ACCOUNT_NAME (Optional)" -ForegroundColor Cyan
