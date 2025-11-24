@@ -2,19 +2,32 @@ name: CI/CD Pipeline
 
 on:
   push:
-    branches: [ main, test/unit-testing ]
+    branches: [ main, dev]
   pull_request:
-    branches: [ main ]
+    branches: [ main, dev ]
   workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy'
+        required: true
+        default: 'dev'
+        type: choice
+        options:
+          - dev
+          - staging
+          - prod
 
 env:
   DOTNET_VERSION: '8.0.x'
-  AZURE_FUNCTIONAPP_NAME: 'event-payment-func'
+  AZURE_FUNCTIONAPP_NAME: 'fintech-func-free'
   AZURE_RESOURCE_GROUP: 'fintech-rg'
   AZURE_LOCATION: 'eastus'
   BUILD_CONFIGURATION: 'Release'
 
 jobs:
+  # ========================================
+  # CI: Build, Test, Security, Coverage
+  # ========================================
   build-and-test:
     name: Build and Test
     runs-on: ubuntu-latest
@@ -34,8 +47,15 @@ jobs:
     - name: Build solution
       run: dotnet build FintechProject.sln --configuration ${{ env.BUILD_CONFIGURATION }} --no-restore
 
-    - name: Run unit tests
-      run: dotnet test test/FintechProject.Tests/FintechProject.Tests.csproj --configuration ${{ env.BUILD_CONFIGURATION }} --no-build --verbosity normal --logger "trx;LogFileName=test-results.trx"
+    - name: Run unit tests with coverage
+      run: |
+        dotnet test test/FintechProject.Tests/FintechProject.Tests.csproj \
+          --configuration ${{ env.BUILD_CONFIGURATION }} \
+          --no-build \
+          --verbosity normal \
+          --logger "trx;LogFileName=test-results.trx" \
+          --collect:"XPlat Code Coverage" \
+          --results-directory ./coverage
 
     - name: Publish test results
       uses: dorny/test-reporter@v1
@@ -46,6 +66,73 @@ jobs:
         reporter: dotnet-trx
         fail-on-error: true
 
+    - name: Generate coverage report
+      uses: danielpalme/ReportGenerator-GitHub-Action@5.2.4
+      with:
+        reports: 'coverage/**/coverage.cobertura.xml'
+        targetdir: 'coveragereport'
+        reporttypes: 'HtmlInline;Cobertura;Badges;MarkdownSummary'
+
+    - name: Extract coverage percentage
+      id: coverage
+      run: |
+        # Extract line coverage percentage from summary
+        COVERAGE=$(grep -oP 'Line coverage: \K[0-9.]+' coveragereport/Summary.md | head -1)
+        if [ -z "$COVERAGE" ]; then
+          # Fallback: parse from Cobertura XML
+          COVERAGE=$(python3 -c "import xml.etree.ElementTree as ET; tree=ET.parse('coveragereport/Cobertura.xml'); root=tree.getroot(); print(f'{float(root.attrib.get(\"line-rate\", 0))*100:.1f}')")
+        fi
+        echo "coverage=$COVERAGE" >> $GITHUB_OUTPUT
+        echo "📊 Code Coverage: $COVERAGE%"
+
+    - name: Enforce coverage threshold
+      run: |
+        COVERAGE=${{ steps.coverage.outputs.coverage }}
+        THRESHOLD=80
+        echo "📊 Current Coverage: $COVERAGE%"
+        echo "🎯 Required Threshold: $THRESHOLD%"
+        
+        if (( $(echo "$COVERAGE < $THRESHOLD" | bc -l) )); then
+          echo "❌ Coverage $COVERAGE% is below threshold $THRESHOLD%"
+          echo "::error::Code coverage ($COVERAGE%) is below the required threshold ($THRESHOLD%)"
+          exit 1
+        else
+          echo "✅ Coverage $COVERAGE% meets threshold $THRESHOLD%"
+        fi
+
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v4
+      with:
+        files: ./coverage/**/coverage.cobertura.xml
+        flags: unittests
+        name: codecov-umbrella
+        fail_ci_if_error: false
+        token: ${{ secrets.CODECOV_TOKEN }}
+
+    - name: Publish coverage report artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: coverage-report
+        path: coveragereport
+
+    - name: Create coverage badge
+      uses: schneegans/dynamic-badges-action@v1.7.0
+      if: github.ref == 'refs/heads/main'
+      continue-on-error: true
+      with:
+        auth: ${{ secrets.GIST_SECRET }}
+        gistID: ${{ secrets.GIST_ID }}
+        filename: fintech-coverage-badge.json
+        label: Coverage
+        message: ${{ steps.coverage.outputs.coverage }}%
+        color: |
+          ${{ 
+            steps.coverage.outputs.coverage >= 80 && 'brightgreen' || 
+            steps.coverage.outputs.coverage >= 60 && 'yellow' || 
+            steps.coverage.outputs.coverage >= 40 && 'orange' || 
+            'red' 
+          }}
+
     - name: Build Azure Functions
       run: dotnet build src/Functions/Functions.csproj --configuration ${{ env.BUILD_CONFIGURATION }} --output ./output
 
@@ -55,14 +142,58 @@ jobs:
         name: function-app
         path: ./output
 
-  deploy-infrastructure:
-    name: Deploy Infrastructure
+  # ========================================
+  # CodeQL Security Analysis
+  # ========================================
+  codeql-analysis:
+    name: CodeQL Security Scan
     runs-on: ubuntu-latest
-    needs: build-and-test
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [ 'csharp' ]
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Initialize CodeQL
+      uses: github/codeql-action/init@v3
+      with:
+        languages: ${{ matrix.language }}
+        queries: security-extended,security-and-quality
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: ${{ env.DOTNET_VERSION }}
+
+    - name: Build solution for CodeQL
+      run: |
+        dotnet restore FintechProject.sln
+        dotnet build FintechProject.sln --configuration ${{ env.BUILD_CONFIGURATION }} --no-restore
+
+    - name: Perform CodeQL Analysis
+      uses: github/codeql-action/analyze@v3
+      with:
+        category: "/language:${{matrix.language}}"
+
+  # ========================================
+  # CD: Deploy to Azure (Free/Minimal Cost)
+  # ========================================
+  deploy-azure:
+    name: Deploy to Azure
+    runs-on: ubuntu-latest
+    needs: [build-and-test, codeql-analysis]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-    outputs:
-      functionAppName: ${{ steps.deploy.outputs.functionAppName }}
-      serviceBusConnectionString: ${{ steps.deploy.outputs.serviceBusConnectionString }}
+    environment:
+      name: production
+      url: https://${{ env.AZURE_FUNCTIONAPP_NAME }}.azurewebsites.net
     
     steps:
     - name: Checkout code
@@ -79,7 +210,7 @@ jobs:
           --name ${{ env.AZURE_RESOURCE_GROUP }} \
           --location ${{ env.AZURE_LOCATION }}
 
-    - name: Deploy Bicep template
+    - name: Deploy Bicep Infrastructure
       id: deploy
       run: |
         DEPLOYMENT_OUTPUT=$(az deployment group create \
@@ -89,52 +220,35 @@ jobs:
           --query properties.outputs \
           --output json)
         
-        echo "Deployment output: $DEPLOYMENT_OUTPUT"
-        
         SERVICE_BUS_CONNECTION=$(echo $DEPLOYMENT_OUTPUT | jq -r '.serviceBusConnectionString.value')
         echo "::add-mask::$SERVICE_BUS_CONNECTION"
         echo "serviceBusConnectionString=$SERVICE_BUS_CONNECTION" >> $GITHUB_OUTPUT
-        echo "functionAppName=${{ env.AZURE_FUNCTIONAPP_NAME }}" >> $GITHUB_OUTPUT
 
-    - name: Azure Logout
-      if: always()
-      run: az logout
-
-  deploy-function-app:
-    name: Deploy Function App
-    runs-on: ubuntu-latest
-    needs: [build-and-test, deploy-infrastructure]
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-    
-    steps:
     - name: Download artifact
       uses: actions/download-artifact@v4
       with:
         name: function-app
         path: ./output
 
-    - name: Azure Login
-      uses: azure/login@v2
-      with:
-        creds: ${{ secrets.AZURE_CREDENTIALS }}
-
     - name: Configure Function App Settings
       run: |
         az functionapp config appsettings set \
-          --name ${{ needs.deploy-infrastructure.outputs.functionAppName }} \
+          --name ${{ env.AZURE_FUNCTIONAPP_NAME }} \
           --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
           --settings \
-            "ServiceBusConnection=${{ needs.deploy-infrastructure.outputs.serviceBusConnectionString }}" \
-            "FUNCTIONS_WORKER_RUNTIME=dotnet-isolated" \
-            "AzureWebJobsStorage__accountName=${{ secrets.STORAGE_ACCOUNT_NAME }}"
-        # Note: PostgreSQL connection removed - using local database for development
-        # Add back when migrating to Azure PostgreSQL: "PostgresConnection=${{ secrets.POSTGRES_CONNECTION_STRING }}"
+            "ServiceBusConnection=${{ steps.deploy.outputs.serviceBusConnectionString }}" \
+            "FUNCTIONS_WORKER_RUNTIME=dotnet-isolated"
 
     - name: Deploy to Azure Functions
       uses: Azure/functions-action@v1
       with:
-        app-name: ${{ needs.deploy-infrastructure.outputs.functionAppName }}
+        app-name: ${{ env.AZURE_FUNCTIONAPP_NAME }}
         package: ./output
+
+    - name: Verify deployment
+      run: |
+        echo "✅ Deployment completed successfully"
+        echo "🌐 Function App: https://${{ env.AZURE_FUNCTIONAPP_NAME }}.azurewebsites.net"
 
     - name: Azure Logout
       if: always()

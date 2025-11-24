@@ -37,8 +37,8 @@ stages:
     - task: UseDotNet@2
       displayName: 'Use .NET $(dotnetVersion)'
       inputs:
-        version: $(dotnetVersion)
-        packageType: sdk
+        version: '$(dotnetVersion)'
+        packageType: 'sdk'
 
     - task: DotNetCoreCLI@2
       displayName: 'Restore NuGet packages'
@@ -54,17 +54,65 @@ stages:
         arguments: '--configuration $(buildConfiguration) --no-restore'
 
     - task: DotNetCoreCLI@2
-      displayName: 'Run unit tests'
+      displayName: 'Run unit tests with coverage'
       inputs:
         command: 'test'
         projects: 'test/FintechProject.Tests/FintechProject.Tests.csproj'
-        arguments: '--configuration $(buildConfiguration) --no-build --logger trx --collect:"XPlat Code Coverage"'
+        arguments: '--configuration $(buildConfiguration) --no-build --logger trx --collect:"XPlat Code Coverage" --results-directory $(Agent.TempDirectory)/coverage'
         publishTestResults: true
 
-    - task: PublishCodeCoverageResults@2
-      displayName: 'Publish code coverage'
+    - task: PowerShell@2
+      displayName: 'Generate coverage report and enforce 80% threshold'
       inputs:
-        summaryFileLocation: '$(Agent.TempDirectory)/**/coverage.cobertura.xml'
+        targetType: 'inline'
+        script: |
+          # Install ReportGenerator
+          Write-Host "Installing ReportGenerator..."
+          dotnet tool install --global dotnet-reportgenerator-globaltool --version 5.2.4
+          
+          # Find coverage file
+          $coverageFile = Get-ChildItem -Path "$(Agent.TempDirectory)/coverage" -Filter "coverage.cobertura.xml" -Recurse | Select-Object -First 1
+          
+          if (-not $coverageFile) {
+              Write-Host "##vso[task.logissue type=error]Coverage file not found"
+              exit 1
+          }
+          
+          Write-Host "Found coverage file: $($coverageFile.FullName)"
+          
+          # Generate HTML report
+          Write-Host "Generating coverage report..."
+          reportgenerator "-reports:$($coverageFile.FullName)" "-targetdir:$(Build.ArtifactStagingDirectory)/coverage-report" "-reporttypes:HtmlInline;Cobertura;Badges"
+          
+          # Parse coverage percentage
+          [xml]$coverage = Get-Content $coverageFile.FullName
+          $lineRate = [double]$coverage.coverage.'line-rate'
+          $coveragePercent = [math]::Round($lineRate * 100, 2)
+          $threshold = 80
+          
+          Write-Host ""
+          Write-Host "========================================"
+          Write-Host "📊 Code Coverage: $coveragePercent%"
+          Write-Host "🎯 Required Threshold: $threshold%"
+          Write-Host "========================================"
+          
+          # Publish coverage as build property
+          Write-Host "##vso[build.addbuildtag]Coverage: $coveragePercent%"
+          
+          if ($coveragePercent -lt $threshold) {
+              Write-Host "##vso[task.logissue type=error]Coverage $coveragePercent% is below threshold $threshold%"
+              Write-Host "❌ Build failed: Code coverage ($coveragePercent%) is below the required threshold ($threshold%)"
+              Write-Host ""
+              Write-Host "📖 To fix: Download the coverage report artifact and review uncovered code"
+              exit 1
+          } else {
+              Write-Host "✅ Coverage $coveragePercent% meets or exceeds threshold $threshold%"
+          }
+    
+    - publish: '$(Build.ArtifactStagingDirectory)/coverage-report'
+      displayName: 'Publish coverage report artifact'
+      artifact: 'coverage-report'
+      condition: always()
 
     - task: DotNetCoreCLI@2
       displayName: 'Publish Azure Functions'
@@ -117,30 +165,28 @@ stages:
                   --name $(resourceGroupName) \
                   --location $(location)
 
-          - task: AzureResourceManagerTemplateDeployment@3
+          - task: AzureCLI@2
             displayName: 'Deploy Bicep template'
             name: bicepDeploy
             inputs:
-              deploymentScope: 'Resource Group'
-              azureResourceManagerConnection: $(azureSubscription)
-              subscriptionId: $(subscriptionId)
-              action: 'Create Or Update Resource Group'
-              resourceGroupName: $(resourceGroupName)
-              location: $(location)
-              templateLocation: 'Linked artifact'
-              csmFile: '$(Pipeline.Workspace)/drop-infra/main.bicep'
-              overrideParameters: '-functionAppName $(functionAppName)'
-              deploymentMode: 'Incremental'
-              deploymentOutputs: 'bicepOutputs'
-
-          - task: PowerShell@2
-            displayName: 'Parse Bicep outputs'
-            inputs:
-              targetType: 'inline'
-              script: |
-                $outputs = ConvertFrom-Json '$(bicepOutputs)'
-                $serviceBusConnection = $outputs.serviceBusConnectionString.value
+              azureSubscription: $(azureSubscription)
+              scriptType: 'pscore'
+              scriptLocation: 'inlineScript'
+              inlineScript: |
+                # Deploy Bicep template
+                $deployment = az deployment group create `
+                  --resource-group $(resourceGroupName) `
+                  --template-file $(Pipeline.Workspace)/drop-infra/main.bicep `
+                  --parameters functionAppName=$(functionAppName) `
+                  --query 'properties.outputs' `
+                  --output json | ConvertFrom-Json
+                
+                # Extract outputs
+                $serviceBusConnection = $deployment.serviceBusConnectionString.value
+                
+                # Set pipeline variable
                 Write-Host "##vso[task.setvariable variable=ServiceBusConnectionString;issecret=true]$serviceBusConnection"
+                Write-Host "✅ Bicep deployment completed successfully"
 
 - stage: DeployFunctionApp
   displayName: 'Deploy Function App'
@@ -171,7 +217,6 @@ stages:
               appSettings: |
                 -ServiceBusConnection "$(ServiceBusConnectionString)"
                 -FUNCTIONS_WORKER_RUNTIME "dotnet-isolated"
-                -AzureWebJobsStorage__accountName "$(StorageAccountName)"
                 # PostgresConnection removed - using local database
 
 # Database deployment stage disabled - using local PostgreSQL database
