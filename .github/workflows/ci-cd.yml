@@ -16,6 +16,13 @@ on:
           - dev
           - prod
 
+permissions:
+  checks: write
+  contents: read
+  pull-requests: write
+  actions: read
+  security-events: write
+
 env:
   DOTNET_VERSION: '8.0.x'
   AZURE_FUNCTIONAPP_NAME: 'fintech-func-free'
