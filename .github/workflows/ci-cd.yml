@@ -138,25 +138,3 @@ jobs:
     - name: Azure Logout
       if: always()
       run: az logout
-
-  deploy-database:
-    name: Deploy Database Changes
-    runs-on: ubuntu-latest
-    needs: build-and-test
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-    
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Install PostgreSQL client
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y postgresql-client
-
-    - name: Run database migrations
-      env:
-        PGPASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
-      run: |
-        psql "${{ secrets.POSTGRES_CONNECTION_STRING }}" -f database/setup.sql
-        psql "${{ secrets.POSTGRES_CONNECTION_STRING }}" -f database/add_credit_cards_table.sql
