@@ -192,7 +192,7 @@ jobs:
     needs: [build-and-test, codeql-analysis]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     environment:
-      name: production
+      name: prod
       url: https://${{ env.AZURE_FUNCTIONAPP_NAME }}.azurewebsites.net
     
     steps:
