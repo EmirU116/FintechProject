@@ -5,7 +5,7 @@ trigger:
   branches:
     include:
     - main
-    - test/unit-testing
+    - dev
   paths:
     exclude:
     - docs/*
@@ -15,6 +15,7 @@ pr:
   branches:
     include:
     - main
+    - dev
 
 variables:
   buildConfiguration: 'Release'
