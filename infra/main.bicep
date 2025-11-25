@@ -1,9 +1,9 @@
 targetScope = 'resourceGroup'
 
 param location string = resourceGroup().location
-param functionAppName string = 'fintech-func-free'
+param functionAppName string = 'event-payment-func'
 
-var storageAccountName = 'st${replace(functionAppName, '-', '')}${uniqueString(resourceGroup().id)}'
+var storageAccountName = 'payapi${uniqueString(resourceGroup().id)}'
 var appInsightsName = '${functionAppName}-insights'
 
 // Always use Consumption Plan (Y1) for minimal cost
@@ -66,7 +66,7 @@ resource appInsights 'Microsoft.Insights/components@2020-02-02' = {
 
 // Consumption Plan (Y1) - Pay per execution, no base cost
 resource plan 'Microsoft.Web/serverfarms@2022-03-01' = {
-  name: '${functionAppName}-plan'
+  name: 'funcPlan'
   location: location
   sku: {
     name: 'Y1'      // Consumption Plan (FREE tier with generous limits)
