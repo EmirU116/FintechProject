@@ -25,8 +25,8 @@ permissions:
 
 env:
   DOTNET_VERSION: '8.0.x'
-  AZURE_FUNCTIONAPP_NAME: 'fintech-func-free'
-  AZURE_RESOURCE_GROUP: 'fintech-rg'
+  AZURE_FUNCTIONAPP_NAME: 'event-payment-func'
+  AZURE_RESOURCE_GROUP: 'newfintech-rg'
   AZURE_LOCATION: 'eastus'
   BUILD_CONFIGURATION: 'Release'
 
