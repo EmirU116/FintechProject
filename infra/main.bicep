@@ -152,7 +152,7 @@ resource serviceBusQueue 'Microsoft.ServiceBus/namespaces/queues@2022-10-01-prev
 //
 // 🟩 Output connection string so you can use it in local.settings.json
 //
-output serviceBusConnectionString string = listKeys(
-  resourceId('Microsoft.ServiceBus/namespaces/AuthorizationRules', serviceBusNamespace.name, 'RootManageSharedAccessKey'),
-  '2022-10-01-preview'
-).primaryConnectionString
+// output serviceBusConnectionString string = listKeys(
+//   resourceId('Microsoft.ServiceBus/namespaces/AuthorizationRules', serviceBusNamespace.name, 'RootManageSharedAccessKey'),
+//   '2022-10-01-preview'
+// ).primaryConnectionString
