@@ -2,6 +2,7 @@ targetScope = 'resourceGroup'
 
 param location string = resourceGroup().location
 param functionAppName string = 'event-payment-func'
+param operatingSystem string = 'linux'
 
 var storageAccountName = 'payapi${uniqueString(resourceGroup().id)}'
 var appInsightsName = '${functionAppName}-insights'
@@ -63,8 +64,9 @@ resource appInsights 'Microsoft.Insights/components@2020-02-02' = {
     publicNetworkAccessForQuery: 'Enabled'
   }
 }
-
 // Consumption Plan (Y1) - Pay per execution, no base cost
+var isLinux = toLower(operatingSystem) == 'linux'
+
 resource plan 'Microsoft.Web/serverfarms@2022-03-01' = {
   name: 'funcPlan'
   location: location
@@ -72,56 +74,59 @@ resource plan 'Microsoft.Web/serverfarms@2022-03-01' = {
     name: 'Y1'      // Consumption Plan (FREE tier with generous limits)
     tier: 'Dynamic' // Pay-per-execution
   }
-  kind: 'linux'
+  kind: 'functionapp'
   properties: {
-    reserved: true
+    reserved: isLinux
   }
 }
 
 resource functionApp 'Microsoft.Web/sites@2022-03-01' = {
   name: functionAppName
   location: location
-  kind: 'functionapp,linux'
+  kind: 'functionapp'
   properties: {
     serverFarmId: plan.id
-    reserved: true
-    siteConfig: {
-      linuxFxVersion: 'DOTNET-ISOLATED|8.0'
-      appSettings: [
-        {
-          name: 'AzureWebJobsStorage'
-          value: 'DefaultEndpointsProtocol=https;AccountName=${storage.name};EndpointSuffix=${az.environment().suffixes.storage};AccountKey=${storage.listKeys().keys[0].value}'
-        }
-        {
-          name: 'WEBSITE_CONTENTAZUREFILECONNECTIONSTRING'
-          value: 'DefaultEndpointsProtocol=https;AccountName=${storage.name};EndpointSuffix=${az.environment().suffixes.storage};AccountKey=${storage.listKeys().keys[0].value}'
-        }
-        {
-          name: 'WEBSITE_CONTENTSHARE'
-          value: toLower(functionAppName)
-        }
-        {
-          name: 'FUNCTIONS_EXTENSION_VERSION'
-          value: '~4'
-        }
-        {
-          name: 'FUNCTIONS_WORKER_RUNTIME'
-          value: 'dotnet-isolated'
-        }
-        {
-          name: 'APPINSIGHTS_INSTRUMENTATIONKEY'
-          value: appInsights.properties.InstrumentationKey
-        }
-        {
-          name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
-          value: appInsights.properties.ConnectionString
-        }
-      ]
-      ftpsState: 'FtpsOnly'
-      minTlsVersion: '1.2'
-      // Limit function execution to prevent runaway costs
-      functionAppScaleLimit: 5  // Max 5 concurrent instances
-    }
+    reserved: isLinux
+    siteConfig: union(
+      {
+        appSettings: [
+          {
+            name: 'AzureWebJobsStorage'
+            value: 'DefaultEndpointsProtocol=https;AccountName=${storage.name};EndpointSuffix=${az.environment().suffixes.storage};AccountKey=${storage.listKeys().keys[0].value}'
+          }
+          {
+            name: 'WEBSITE_CONTENTAZUREFILECONNECTIONSTRING'
+            value: 'DefaultEndpointsProtocol=https;AccountName=${storage.name};EndpointSuffix=${az.environment().suffixes.storage};AccountKey=${storage.listKeys().keys[0].value}'
+          }
+          {
+            name: 'WEBSITE_CONTENTSHARE'
+            value: toLower(functionAppName)
+          }
+          {
+            name: 'FUNCTIONS_EXTENSION_VERSION'
+            value: '~4'
+          }
+          {
+            name: 'FUNCTIONS_WORKER_RUNTIME'
+            value: 'dotnet-isolated'
+          }
+          {
+            name: 'APPINSIGHTS_INSTRUMENTATIONKEY'
+            value: appInsights.properties.InstrumentationKey
+          }
+          {
+            name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
+            value: appInsights.properties.ConnectionString
+          }
+        ]
+        ftpsState: 'FtpsOnly'
+        minTlsVersion: '1.2'
+        functionAppScaleLimit: 5  // Max 5 concurrent instances
+      },
+      isLinux ? {
+        linuxFxVersion: 'DOTNET-ISOLATED|8.0'
+      } : {}
+    )
     httpsOnly: true
   }
 }
