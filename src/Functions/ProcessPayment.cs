@@ -10,12 +10,10 @@ namespace Functions;
 public class ProcessPayment
 {
     private readonly ILogger<ProcessPayment> _logger;
-    private readonly MoneyTransferService _transferService;
 
-    public ProcessPayment(ILogger<ProcessPayment> logger, MoneyTransferService transferService)
+    public ProcessPayment(ILogger<ProcessPayment> logger)
     {
         _logger = logger;
-        _transferService = transferService;
     }
 
     [Function("ProcessPayment")]
@@ -108,67 +106,6 @@ public class ProcessPayment
             ServiceBusMessage = messageBody
         };
     }
-
-    // [Function("TransferMoney")]
-    // public async Task TransferMoneyFromQueue(
-    //     [ServiceBusTrigger("transactions", Connection = "ServiceBusConnection")] string messageBody)
-    // {
-    //     _logger.LogInformation("Processing transfer from Service Bus queue");
-
-    //     try
-    //     {
-    //         // Deserialize the transaction from queue message
-    //         var transferRequest = JsonSerializer.Deserialize<TransferRequest>(messageBody, new JsonSerializerOptions
-    //         {
-    //             PropertyNameCaseInsensitive = true
-    //         });
-
-    //         if (transferRequest == null)
-    //         {
-    //             _logger.LogError("Failed to deserialize transfer request from queue");
-    //             throw new InvalidOperationException("Invalid transfer request in queue message");
-    //         }
-
-    //         _logger.LogInformation(
-    //             "Processing transfer: {Amount} {Currency} from {From} to {To}",
-    //             transferRequest.Amount,
-    //             transferRequest.Currency ?? "USD",
-    //             $"****{transferRequest.FromCardNumber[^4..]}",
-    //             $"****{transferRequest.ToCardNumber[^4..]}"
-    //         );
-
-    //         // Execute the money transfer and update database
-    //         var result = await _transferService.TransferMoneyAsync(
-    //             transferRequest.FromCardNumber,
-    //             transferRequest.ToCardNumber,
-    //             transferRequest.Amount,
-    //             transferRequest.Currency ?? "USD"
-    //         );
-
-    //         if (result.Success)
-    //         {
-    //             _logger.LogInformation(
-    //                 "Transfer completed successfully: {TransactionId} - From balance: {FromBalance}, To balance: {ToBalance}",
-    //                 result.TransactionId,
-    //                 result.FromAccountNewBalance,
-    //                 result.ToAccountNewBalance
-    //             );
-    //         }
-    //         else
-    //         {
-    //             _logger.LogWarning(
-    //                 "Transfer failed: {TransactionId} - {Message}",
-    //                 result.TransactionId,
-    //                 result.Message
-    //             );
-    //         }
-    //     }
-    //     catch (Exception ex)
-    //     {
-    //         _logger.LogError(ex, "Error processing transfer from queue: {Message}", ex.Message);
-    //         throw; // Re-throw to allow Service Bus retry logic
-    //     }
-    // }
 
     private class TransferRequest
     {
