@@ -1,7 +1,7 @@
 using System;
 using System.Text.Json;
 using System.Threading.Tasks;
-using Azure.Messaging.ServiceBus;
+using Azure.Storage.Queues;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Logging;
 using Source.Core.Transaction;
@@ -9,31 +9,35 @@ using Source.Core;
 using Source.Core.Database;
 using Microsoft.Azure.Functions.Worker.Http;
 using System.Net;
+using Source.Core.Eventing;
 
 namespace Source.Functions;
 
 public class SettleTransaction
 {
     private readonly ILogger<SettleTransaction> _logger;
+    private readonly IEventGridPublisher _eventGridPublisher;
     private readonly ITransactionRepository _transactionRepository;
     private readonly MoneyTransferService _transferService;
 
     public SettleTransaction(
-        ILogger<SettleTransaction> logger, 
+        ILogger<SettleTransaction> logger,
         ITransactionRepository transactionRepository,
-        MoneyTransferService transferService)
+        MoneyTransferService transferService,
+        IEventGridPublisher eventGridPublisher)
     {
         _logger = logger;
         _transactionRepository = transactionRepository;
         _transferService = transferService;
+        _eventGridPublisher = eventGridPublisher;
     }
     
     [Function("SettleTransaction")]
     public async Task Run(
-        [ServiceBusTrigger("transactions", Connection = "ServiceBusConnection")] string messageBody)
+        [QueueTrigger("transactions", Connection = "AzureWebJobsStorage")] string messageBody)
     {
-        _logger.LogInformation("🔵 ═══ SERVICE BUS TRIGGER FIRED ═══");
-        _logger.LogInformation("🔵 Processing transaction from Service Bus queue");
+        _logger.LogInformation("🟩 ═══ STORAGE QUEUE TRIGGER FIRED ═══");
+        _logger.LogInformation("🟩 Processing transaction from Storage Queue");
 
         try
         {
@@ -81,6 +85,16 @@ public class SettleTransaction
                         result.FromAccountNewBalance,
                         result.ToAccountNewBalance
                     );
+                    var subject = $"/transactions/{result.TransactionId}";
+                    await _eventGridPublisher.PublishTransactionProcessedAsync(new
+                    {
+                        result.TransactionId,
+                        transaction.Amount,
+                        transaction.Currency,
+                        transferTimestamp = result.TransferTimestamp,
+                        fromBalance = result.FromAccountNewBalance,
+                        toBalance = result.ToAccountNewBalance
+                    }, subject);
                     _logger.LogInformation("🔵 ✓ Database updated successfully");
                 }
                 else
@@ -100,6 +114,13 @@ public class SettleTransaction
         }
         catch (Exception ex)
         {
+            var subject = $"/transactions/{messageBody}";
+            await _eventGridPublisher.PublishTransactionFailedAsync(new
+            {
+                transactionId = messageBody,
+                reason = ex.Message,
+                occurredAt = DateTime.UtcNow
+            }, subject);
             _logger.LogError(ex, "Error processing transaction from queue: {Message}", ex.Message);
             throw; // Re-throw to allow Service Bus retry logic
         }

@@ -110,6 +110,7 @@ resource functionApp 'Microsoft.Web/sites@2022-03-01' = {
           name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
           value: appInsights.properties.ConnectionString
         }
+        // Event Grid Topic settings will be appended via config resource below
       ]
       ftpsState: 'FtpsOnly'
       minTlsVersion: '1.2'
@@ -123,29 +124,58 @@ resource functionApp 'Microsoft.Web/sites@2022-03-01' = {
 // 🟦 Add Service Bus namespace and queue
 //
 
-param serviceBusNamespaceName string = 'fintech-sb-${uniqueString(resourceGroup().id)}'
+// Removed Service Bus; parameter no longer needed
 
-resource serviceBusNamespace 'Microsoft.ServiceBus/namespaces@2022-10-01-preview' = {
-  name: serviceBusNamespaceName
-  location: location
-  sku: {
-    name: 'Basic' // use Standard if you need topics
-    tier: 'Basic'
-  }
+// Replace Service Bus with Azure Storage Queue (lower idle cost)
+resource queueService 'Microsoft.Storage/storageAccounts/queueServices@2022-09-01' = {
+  name: 'default'
+  parent: storage
 }
 
-resource serviceBusQueue 'Microsoft.ServiceBus/namespaces/queues@2022-10-01-preview' = {
-  parent: serviceBusNamespace
+resource transactionsQueue 'Microsoft.Storage/storageAccounts/queueServices/queues@2022-09-01' = {
   name: 'transactions'
-  properties: {
-    enablePartitioning: true
-  }
+  parent: queueService
 }
 
 //
-// 🟩 Output connection string so you can use it in local.settings.json
-//
-// output serviceBusConnectionString string = listKeys(
-//   resourceId('Microsoft.ServiceBus/namespaces/AuthorizationRules', serviceBusNamespace.name, 'RootManageSharedAccessKey'),
-//   '2022-10-01-preview'
-// ).primaryConnectionString
+// Storage connection string for local dev
+// Note: Avoid outputting secrets (AccountKey). Use `az storage account show-connection-string` locally.
+
+// 🟧 Event Grid Topic for domain events
+@description('Event Grid custom topic for transaction domain events')
+resource eventGridTopic 'Microsoft.EventGrid/topics@2022-06-15' = {
+  name: 'fintech-transactions-${uniqueString(resourceGroup().id)}'
+  location: location
+  properties: {
+    inputSchema: 'EventGridSchema'
+    publicNetworkAccess: 'Enabled'
+  }
+}
+
+var eventGridEndpoint = 'https://${eventGridTopic.name}.eventgrid.azure.net/api/events'
+
+// Apply settings to Function App
+// Assign Event Grid Event Publisher role to the Function App's system-assigned identity
+resource functionIdentity 'Microsoft.Web/sites@2022-03-01' existing = {
+  name: functionAppName
+}
+
+@description('Grant Event Publisher role to Function App MSI on the Event Grid topic scope')
+resource eventPublisherRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(eventGridTopic.id, 'eventPublisherRole')
+  scope: eventGridTopic
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '5e467ea0-369d-4d8b-b3d8-5b28b9fa7d2e')
+    principalId: functionIdentity.identity.principalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
+// Set only the endpoint in app settings (MSI auth used)
+resource functionAppConfig 'Microsoft.Web/sites/config@2022-03-01' = {
+  parent: functionApp
+  name: 'appsettings'
+  properties: {
+    'EventGrid:TopicEndpoint': eventGridEndpoint
+  }
+}
