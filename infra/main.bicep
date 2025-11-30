@@ -78,6 +78,9 @@ resource functionApp 'Microsoft.Web/sites@2022-03-01' = {
   name: functionAppName
   location: location
   kind: 'functionapp'
+  identity: {
+    type: 'SystemAssigned'
+  }
   properties: {
     serverFarmId: plan.id
     siteConfig: {
@@ -197,19 +200,14 @@ resource eventGridTopic 'Microsoft.EventGrid/topics@2022-06-15' = {
 
 var eventGridEndpoint = 'https://${eventGridTopic.name}.eventgrid.azure.net/api/events'
 
-// Apply settings to Function App
-// Assign Event Grid Event Publisher role to the Function App's system-assigned identity
-resource functionIdentity 'Microsoft.Web/sites@2022-03-01' existing = {
-  name: functionAppName
-}
-
-@description('Grant Event Publisher role to Function App MSI on the Event Grid topic scope')
-resource eventPublisherRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(eventGridTopic.id, 'eventPublisherRole')
+// Assign Event Grid Data Sender role to the Function App's system-assigned identity
+@description('Grant Event Grid Data Sender role to Function App MSI on the Event Grid topic scope')
+resource eventGridRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(eventGridTopic.id, functionApp.id, 'd5a91429-5739-47e2-a06b-3470a27159e7')
   scope: eventGridTopic
   properties: {
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '5e467ea0-369d-4d8b-b3d8-5b28b9fa7d2e')
-    principalId: functionIdentity.identity.principalId
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'd5a91429-5739-47e2-a06b-3470a27159e7')
+    principalId: functionApp.identity.principalId
     principalType: 'ServicePrincipal'
   }
 }
