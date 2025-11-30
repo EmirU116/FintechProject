@@ -2,6 +2,8 @@ using System;
 using System.Text.Json;
 using System.Threading.Tasks;
 using Azure.Messaging.ServiceBus;
+using Azure.Messaging;
+using Azure.Messaging.EventGrid;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Logging;
 using Source.Core.Transaction;
@@ -17,15 +19,18 @@ public class SettleTransaction
     private readonly ILogger<SettleTransaction> _logger;
     private readonly ITransactionRepository _transactionRepository;
     private readonly MoneyTransferService _transferService;
+    private readonly EventGridPublisherClient? _eventGrid;
 
     public SettleTransaction(
         ILogger<SettleTransaction> logger, 
         ITransactionRepository transactionRepository,
-        MoneyTransferService transferService)
+        MoneyTransferService transferService,
+        EventGridPublisherClient? eventGrid = null)
     {
         _logger = logger;
         _transactionRepository = transactionRepository;
         _transferService = transferService;
+        _eventGrid = eventGrid;
     }
     
     [Function("SettleTransaction")]
@@ -82,6 +87,44 @@ public class SettleTransaction
                         result.ToAccountNewBalance
                     );
                     _logger.LogInformation("🔵 ✓ Database updated successfully");
+
+                    // Publish Transaction.Settled event to Event Grid
+                    try
+                    {
+                        if (_eventGrid is not null)
+                        {
+                            var evtData = new
+                            {
+                                transactionId = result.TransactionId,
+                                amount = transaction.Amount,
+                                currency = transaction.Currency,
+                                fromCardMasked = transaction.CardNumberMasked,
+                                toCardMasked = transaction.ToCardNumberMasked,
+                                processedAtUtc = DateTime.UtcNow
+                            };
+
+                            var cloudEvent = new CloudEvent(
+                                source: "urn:fintech:transactions",
+                                type: "Transaction.Settled",
+                                data: BinaryData.FromObjectAsJson(evtData),
+                                dataContentType: "application/json",
+                                dataFormat: CloudEventDataFormat.Json)
+                            {
+                                Subject = $"transactions/{result.TransactionId}"
+                            };
+
+                            await _eventGrid.SendEventAsync(cloudEvent);
+                            _logger.LogInformation("🔵 Published Event Grid event Transaction.Settled for {TransactionId}", result.TransactionId);
+                        }
+                        else
+                        {
+                            _logger.LogWarning("Event Grid publisher not configured; skipping event publish.");
+                        }
+                    }
+                    catch (Exception egx)
+                    {
+                        _logger.LogError(egx, "Failed to publish Event Grid event for {TransactionId}", result.TransactionId);
+                    }
                 }
                 else
                 {
@@ -90,6 +133,40 @@ public class SettleTransaction
                         result.TransactionId,
                         result.Message
                     );
+                    // Optionally publish a failure event
+                    try
+                    {
+                        if (_eventGrid is not null)
+                        {
+                            var evtData = new
+                            {
+                                transactionId = result.TransactionId,
+                                amount = transaction.Amount,
+                                currency = transaction.Currency,
+                                fromCardMasked = transaction.CardNumberMasked,
+                                toCardMasked = transaction.ToCardNumberMasked,
+                                reason = result.Message,
+                                failedAtUtc = DateTime.UtcNow
+                            };
+
+                            var cloudEvent = new CloudEvent(
+                                source: "urn:fintech:transactions",
+                                type: "Transaction.Failed",
+                                data: BinaryData.FromObjectAsJson(evtData),
+                                dataContentType: "application/json",
+                                dataFormat: CloudEventDataFormat.Json)
+                            {
+                                Subject = $"transactions/{result.TransactionId}"
+                            };
+
+                            await _eventGrid.SendEventAsync(cloudEvent);
+                            _logger.LogInformation("🟠 Published Event Grid event Transaction.Failed for {TransactionId}", result.TransactionId);
+                        }
+                    }
+                    catch (Exception egx)
+                    {
+                        _logger.LogError(egx, "Failed to publish failure Event Grid event for {TransactionId}", result.TransactionId);
+                    }
                 }
             }
             else

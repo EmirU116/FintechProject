@@ -2,6 +2,8 @@ targetScope = 'resourceGroup'
 
 param location string = resourceGroup().location
 param functionAppName string = 'event-payment-func'
+param eventGridTopicName string = 'fintech-transaction-${uniqueString(resourceGroup().id)}'
+
 
 var storageAccountName = 'payapi${uniqueString(resourceGroup().id)}'
 var appInsightsName = '${functionAppName}-insights'
@@ -149,3 +151,19 @@ resource serviceBusQueue 'Microsoft.ServiceBus/namespaces/queues@2022-10-01-prev
 //   resourceId('Microsoft.ServiceBus/namespaces/AuthorizationRules', serviceBusNamespace.name, 'RootManageSharedAccessKey'),
 //   '2022-10-01-preview'
 // ).primaryConnectionString
+
+
+resource eventGridTopic 'Microsoft.EventGrid/topics@2025-02-15' = {
+  name: eventGridTopicName
+  location: location
+  sku: {
+    name: 'Basic'
+  }
+  properties: {
+    inputSchema: 'CloudEventSchemaV1_0'
+  }
+}
+
+
+output eventGridTopicEndpoint string = eventGridTopic.properties.endpoint
+output eventGridTopicKey string = listKeys(eventGridTopic.id, '2025-02-15').key1

@@ -1,5 +1,7 @@
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Builder;
+using Azure;
+using Azure.Messaging.EventGrid;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -26,5 +28,15 @@ builder.Services.AddScoped<MoneyTransferService>();
 builder.Services
     .AddApplicationInsightsTelemetryWorkerService()
     .ConfigureFunctionsApplicationInsights();
+
+// Register Event Grid publisher if configuration is present
+var topicEndpoint = builder.Configuration["EventGrid:TopicEndpoint"];
+var topicKey = builder.Configuration["EventGrid:TopicKey"];
+
+if (!string.IsNullOrWhiteSpace(topicEndpoint) && !string.IsNullOrWhiteSpace(topicKey))
+{
+    builder.Services.AddSingleton(_ =>
+        new EventGridPublisherClient(new Uri(topicEndpoint), new AzureKeyCredential(topicKey)));
+}
 
 builder.Build().Run();
