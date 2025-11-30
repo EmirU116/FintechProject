@@ -4,6 +4,9 @@ using Microsoft.Extensions.Logging;
 using System.Net;
 using System.Text.Json;
 using Source.Core;
+using Azure.Messaging;
+using Azure.Messaging.EventGrid;
+using Source.Core.Events;
 
 namespace Functions;
 
@@ -11,11 +14,16 @@ public class ProcessPayment
 {
     private readonly ILogger<ProcessPayment> _logger;
     private readonly MoneyTransferService _transferService;
+    private readonly EventGridPublisherClient? _eventGrid;
 
-    public ProcessPayment(ILogger<ProcessPayment> logger, MoneyTransferService transferService)
+    public ProcessPayment(
+        ILogger<ProcessPayment> logger, 
+        MoneyTransferService transferService,
+        EventGridPublisherClient? eventGrid = null)
     {
         _logger = logger;
         _transferService = transferService;
+        _eventGrid = eventGrid;
     }
 
     [Function("ProcessPayment")]
@@ -86,6 +94,45 @@ public class ProcessPayment
         
         _logger.LogInformation("🟢 [TRACE:{TraceId}] Transfer request queued with Transaction ID: {TransactionId}", traceId, transaction.Id);
         _logger.LogInformation("🟢 [TRACE:{TraceId}] Message sent to Azure Service Bus queue 'transactions'", traceId);
+
+        // Publish Transaction.Queued event to Event Grid
+        try
+        {
+            if (_eventGrid != null)
+            {
+                var eventData = new TransactionQueuedEventData
+                {
+                    TransactionId = transaction.Id.ToString(),
+                    Amount = transaction.Amount,
+                    Currency = transaction.Currency,
+                    FromCardMasked = transaction.CardNumberMasked,
+                    ToCardMasked = transaction.ToCardNumberMasked,
+                    QueuedAtUtc = transaction.Timestamp
+                };
+
+                var cloudEvent = new CloudEvent(
+                    source: "urn:fintech:transactions",
+                    type: "Transaction.Queued",
+                    data: BinaryData.FromObjectAsJson(eventData),
+                    dataContentType: "application/json",
+                    dataFormat: CloudEventDataFormat.Json)
+                {
+                    Subject = $"transactions/{transaction.Id}"
+                };
+
+                await _eventGrid.SendEventAsync(cloudEvent);
+                _logger.LogInformation("🟢 [TRACE:{TraceId}] Transaction.Queued event published to Event Grid", traceId);
+            }
+            else
+            {
+                _logger.LogWarning("🟡 [TRACE:{TraceId}] Event Grid publisher not configured, skipping event publication", traceId);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error publishing Transaction.Queued event to Event Grid: {Message}", ex.Message);
+            // Don't let event publishing failure affect the main transaction processing
+        }
 
         var response = req.CreateResponse(HttpStatusCode.Accepted);
         await response.WriteAsJsonAsync(new

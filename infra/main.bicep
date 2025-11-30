@@ -162,6 +162,49 @@ resource eventGridTopic 'Microsoft.EventGrid/topics@2022-06-15' = {
   }
 }
 
+// Event Grid subscription for OnTransactionSettled function
+resource eventSubscription 'Microsoft.EventGrid/eventSubscriptions@2022-06-15' = {
+  name: 'fintech-transaction-settled-sub'
+  scope: eventGridTopic
+  properties: {
+    destination: {
+      endpointType: 'AzureFunction'
+      properties: {
+        resourceId: '${functionApp.id}/functions/OnTransactionSettled'
+        maxEventsPerBatch: 1
+        preferredBatchSizeInKilobytes: 64
+      }
+    }
+    filter: {
+      includedEventTypes: [
+        'Transaction.Settled'
+        'Transaction.Failed'
+      ]
+      enableAdvancedFilteringOnArrays: true
+    }
+    eventDeliverySchema: 'CloudEventSchemaV1_0'
+    retryPolicy: {
+      maxDeliveryAttempts: 30
+      eventTimeToLiveInMinutes: 1440
+    }
+    deadLetterDestination: {
+      endpointType: 'StorageBlob'
+      properties: {
+        resourceId: storage.id
+        blobContainerName: deadLetterContainer.name
+      }
+    }
+  }
+}
+
+resource deadLetterContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2022-09-01' = {
+  name: 'event-grid-deadletter'
+  parent: storage::default
+  properties: {
+    publicAccess: 'None'
+  }
+}
 
 output eventGridTopicEndpoint string = eventGridTopic.properties.endpoint
 output eventGridTopicKey string = listKeys(eventGridTopic.id, '2022-06-15').key1
+output eventSubscriptionName string = eventSubscription.name

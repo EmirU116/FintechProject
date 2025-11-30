@@ -38,6 +38,9 @@
     <Compile Include="..\Core\Database\TransactionRepository.cs" Link="Database\TransactionRepository.cs" />
     <Compile Include="..\Core\Database\ICreditCardRepository.cs" Link="Database\ICreditCardRepository.cs" />
     <Compile Include="..\Core\Database\CreditCardRepository.cs" Link="Database\CreditCardRepository.cs" />
+    <Compile Include="..\Core\Events\TransactionEventData.cs" Link="Events\TransactionEventData.cs" />
+    <Compile Include="..\Core\Events\TransactionQueuedEventData.cs" Link="Events\TransactionQueuedEventData.cs" />
+    <Compile Include="..\Core\Events\FraudAlertEventData.cs" Link="Events\FraudAlertEventData.cs" />
   </ItemGroup>
 
 </Project>
