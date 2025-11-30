@@ -153,17 +153,15 @@ resource serviceBusQueue 'Microsoft.ServiceBus/namespaces/queues@2022-10-01-prev
 // ).primaryConnectionString
 
 
-resource eventGridTopic 'Microsoft.EventGrid/topics@2025-02-15' = {
+resource eventGridTopic 'Microsoft.EventGrid/topics@2022-06-15' = {
   name: eventGridTopicName
   location: location
-  sku: {
-    name: 'Basic'
-  }
   properties: {
     inputSchema: 'CloudEventSchemaV1_0'
+    publicNetworkAccess: 'Enabled'
   }
 }
 
 
 output eventGridTopicEndpoint string = eventGridTopic.properties.endpoint
-output eventGridTopicKey string = listKeys(eventGridTopic.id, '2025-02-15').key1
+output eventGridTopicKey string = listKeys(eventGridTopic.id, '2022-06-15').key1
