@@ -1,10 +1,11 @@
 # PostgreSQL Database Setup Guide
 
-This guide will help you set up PostgreSQL locally for the Fintech project.
+Quick setup guide for PostgreSQL database used by the Fintech Payment Platform.
 
 ## Prerequisites
 
-- PostgreSQL installed on your local machine
+- PostgreSQL 14+ installed locally or Azure Database for PostgreSQL
+- psql command-line tool
 - pgAdmin (optional, for GUI management)
 
 ## Installation

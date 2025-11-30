@@ -1,4 +1,5 @@
 # Azure DevOps Pipeline Configuration
+# Deploys Fintech Platform with Storage Queues, Event Grid (MSI), and PostgreSQL
 # Alternative to GitHub Actions for teams using Azure DevOps
 
 trigger:
