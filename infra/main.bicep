@@ -121,12 +121,55 @@ resource functionApp 'Microsoft.Web/sites@2022-03-01' = {
 }
 
 //
-// 🟦 Add Service Bus namespace and queue
+// 🟦 Service Bus for critical payment processing
 //
 
-// Removed Service Bus; parameter no longer needed
+@description('Service Bus namespace for critical/high-value payment processing')
+resource serviceBusNamespace 'Microsoft.ServiceBus/namespaces@2022-10-01-preview' = {
+  name: 'fintech-sb-${uniqueString(resourceGroup().id)}'
+  location: location
+  sku: {
+    name: 'Standard'
+    tier: 'Standard'
+  }
+  properties: {
+    minimumTlsVersion: '1.2'
+    publicNetworkAccess: 'Enabled'
+    disableLocalAuth: false
+  }
+}
 
-// Replace Service Bus with Azure Storage Queue (lower idle cost)
+@description('Service Bus queue for critical payments with DLQ and duplicate detection')
+resource serviceBusQueue 'Microsoft.ServiceBus/namespaces/queues@2022-10-01-preview' = {
+  parent: serviceBusNamespace
+  name: 'critical-payments'
+  properties: {
+    maxDeliveryCount: 10
+    lockDuration: 'PT5M'
+    requiresDuplicateDetection: true
+    duplicateDetectionHistoryTimeWindow: 'PT10M'
+    enablePartitioning: false
+    deadLetteringOnMessageExpiration: true
+    maxSizeInMegabytes: 1024
+  }
+}
+
+@description('Service Bus authorization rule for Function App access')
+resource serviceBusAuthRule 'Microsoft.ServiceBus/namespaces/authorizationRules@2022-10-01-preview' = {
+  parent: serviceBusNamespace
+  name: 'FunctionAppAccess'
+  properties: {
+    rights: [
+      'Send'
+      'Listen'
+      'Manage'
+    ]
+  }
+}
+
+//
+// 🟩 Storage Queue for standard payment processing (lower idle cost)
+//
 resource queueService 'Microsoft.Storage/storageAccounts/queueServices@2022-09-01' = {
   name: 'default'
   parent: storage
@@ -171,11 +214,19 @@ resource eventPublisherRole 'Microsoft.Authorization/roleAssignments@2022-04-01'
   }
 }
 
-// Set only the endpoint in app settings (MSI auth used)
+// Set Event Grid endpoint and Service Bus connection in app settings
 resource functionAppConfig 'Microsoft.Web/sites/config@2022-03-01' = {
   parent: functionApp
   name: 'appsettings'
   properties: {
     'EventGrid:TopicEndpoint': eventGridEndpoint
+    ServiceBusConnection__fullyQualifiedNamespace: '${serviceBusNamespace.name}.servicebus.windows.net'
+    ServiceBusConnectionString: serviceBusAuthRule.listKeys().primaryConnectionString
   }
 }
+
+// Outputs for reference
+output serviceBusNamespace string = serviceBusNamespace.name
+output serviceBusQueueName string = serviceBusQueue.name
+output storageAccountName string = storage.name
+output eventGridTopicName string = eventGridTopic.name

@@ -148,7 +148,9 @@ Expected response:
 }
 ```
 
-#### D. Use Demo Script (Automated)
+#### D. Use Demo Scripts (Automated)
+
+**Standard Transfer (Storage Queue):**
 ```powershell
 # From project root
 .\queue-send-demo.ps1 -Amount 100.00
@@ -159,6 +161,27 @@ Expected response:
 - `-FromCard` - Source card (default: test card)
 - `-ToCard` - Destination card (default: test card)
 - `-ConnectionString` - Storage connection (reads from local.settings.json if omitted)
+
+---
+
+**Critical Payment (Service Bus):**
+```powershell
+# From project root
+.\servicebus-send-demo.ps1 -Amount 5000.00
+```
+
+**Parameters:**
+- `-Amount` - Transaction amount (default: 5000.00)
+- `-CardNumber` - Source card (default: test card)
+- `-ToCardNumber` - Destination card (default: test card)
+- `-ConnectionString` - Service Bus connection (reads from local.settings.json if omitted)
+- `-Currency` - Currency code (default: USD)
+
+**Critical Payment Features:**
+- ✅ Guaranteed delivery via Service Bus Standard
+- ✅ Dead Letter Queue (DLQ) after 10 retries
+- ✅ Duplicate detection (10-minute window)
+- ✅ 5-minute message lock duration
 
 ### Step 5: Verify Transaction Processing
 
@@ -220,7 +243,9 @@ $seedUrl = "$BASE_URL/SeedCreditCards?code=$FUNCTION_KEY"
 Invoke-RestMethod -Method Post -Uri $seedUrl
 ```
 
-### Step 3: Test Transaction Flow
+### Step 3: Test Transaction Flows
+
+#### Standard Transfer (Storage Queue)
 ```powershell
 $processUrl = "$BASE_URL/ProcessPayment?code=$FUNCTION_KEY"
 
@@ -234,13 +259,55 @@ $transaction = @{
 $response = Invoke-RestMethod -Method Post -Uri $processUrl -Body $transaction -ContentType "application/json"
 $response | ConvertTo-Json
 
-# Wait for processing (queue → DB)
+# Wait for processing (Storage Queue → DB)
 Start-Sleep -Seconds 5
 
 # Check results
 $historyUrl = "$BASE_URL/GetProcessedTransactions?code=$FUNCTION_KEY"
 Invoke-RestMethod -Method Get -Uri $historyUrl | ConvertTo-Json
 ```
+
+---
+
+#### Critical Payment (Service Bus)
+```powershell
+$criticalUrl = "$BASE_URL/critical-payment?code=$FUNCTION_KEY"
+
+$criticalPayment = @{
+    cardNumber = "4532015112830366"
+    toCardNumber = "5425233430109903"
+    amount = 5000.00
+    currency = "USD"
+} | ConvertTo-Json
+
+$response = Invoke-RestMethod -Method Post -Uri $criticalUrl -Body $criticalPayment -ContentType "application/json"
+$response | ConvertTo-Json
+
+# Wait for processing (Service Bus → DB with retries/DLQ)
+Start-Sleep -Seconds 8
+
+# Check results
+Invoke-RestMethod -Method Get -Uri $historyUrl | ConvertTo-Json
+```
+
+**Monitor Critical Payment Processing:**
+```powershell
+# Check Service Bus queue depth
+az servicebus queue show `
+  --resource-group $RESOURCE_GROUP `
+  --namespace-name fintech-sb-<suffix> `
+  --name critical-payments `
+  --query "countDetails.activeMessageCount"
+
+# Check Dead Letter Queue (if retries exhausted)
+az servicebus queue show `
+  --resource-group $RESOURCE_GROUP `
+  --namespace-name fintech-sb-<suffix> `
+  --name critical-payments `
+  --query "countDetails.deadLetterMessageCount"
+```
+
+---
 
 ### Step 4: Monitor with Application Insights
 

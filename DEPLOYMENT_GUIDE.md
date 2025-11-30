@@ -39,6 +39,8 @@ This provisions:
 - Application Insights (with sampling)
 - Function App (Consumption plan)
 - Storage Queue (`transactions`)
+- **Service Bus Namespace (Standard tier)**
+- **Service Bus Queue (`critical-payments` with DLQ, duplicate detection)**
 - Event Grid Custom Topic
 - Role assignment (Function → Event Grid Publisher)
 
@@ -179,12 +181,14 @@ az functionapp function list `
 ```
 
 Expected functions:
-- `ProcessPayment`
-- `SettleTransaction`
+- `ProcessPayment` (HTTP → Storage Queue)
+- `SendCriticalPayment` (HTTP → Service Bus)
+- `SettleTransaction` (Storage Queue trigger)
+- `ProcessCriticalPayment` (Service Bus trigger)
 - `GetProcessedTransactions`
 - `GetCreditCards`
 - `SeedCreditCards`
-- `OnTransactionProcessed`
+- `OnTransactionProcessed` (Event Grid trigger)
 
 ## Step 5: Initialize Database with Test Data
 

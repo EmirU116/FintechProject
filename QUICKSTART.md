@@ -48,32 +48,44 @@ cd src/Functions
 func start
 ```
 
-### 5. Test Transaction Flow
+### 5. Test Transaction Flows
 
 **Terminal 1** (Functions running):
 ```
 [2025-11-30T10:00:00] Azure Functions Core Tools
-[2025-11-30T10:00:00] Functions: ProcessPayment, SettleTransaction, ...
+[2025-11-30T10:00:00] Functions: ProcessPayment, SendCriticalPayment, SettleTransaction, ProcessCriticalPayment, ...
 ```
 
-**Terminal 2** (Send test transaction):
+**Terminal 2** (Send test transactions):
 ```powershell
 # Seed test cards
 Invoke-RestMethod -Method Post -Uri "http://localhost:7071/api/SeedCreditCards"
 
-# Send transaction
+# Test Standard Transfer (Storage Queue)
 .\queue-send-demo.ps1 -Amount 50.00
+
+# Test Critical Payment (Service Bus) - requires Service Bus connection
+.\servicebus-send-demo.ps1 -Amount 5000.00
 
 # Check results
 Invoke-RestMethod -Method Get -Uri "http://localhost:7071/api/GetProcessedTransactions" | ConvertTo-Json
 ```
 
 **Expected logs in Terminal 1:**
+
+*Standard Transfer:*
 ```
 [2025-11-30T10:00:01] 🟩 ═══ STORAGE QUEUE TRIGGER FIRED ═══
 [2025-11-30T10:00:01] 🟩 Processing transaction from Storage Queue
 [2025-11-30T10:00:02] 🟩 ✓ Transfer completed successfully
 [2025-11-30T10:00:02] EventGrid published: fintech.transactions.processed
+```
+
+*Critical Payment:*
+```
+[2025-11-30T10:00:05] 🔴 Processing critical payment for TransactionId: abc-123, Amount: 5000.00
+[2025-11-30T10:00:06] 🔴 Critical payment processed successfully: abc-123
+[2025-11-30T10:00:06] EventGrid published: fintech.transactions.processed critical-payment/abc-123
 ```
 
 ---

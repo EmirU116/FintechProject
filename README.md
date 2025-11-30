@@ -4,27 +4,46 @@ A production-ready, cloud-native fintech payment processing system built with Az
 
 ## 🏗️ Architecture
 
+### Dual-Queue Processing Pattern
+
 ```
-┌─────────────┐      ┌──────────────────┐      ┌─────────────────┐
-│   Client    │─────▶│ ProcessPayment   │─────▶│ Storage Queue   │
-│   (HTTP)    │      │   (Validator)    │      │  (transactions) │
-└─────────────┘      └──────────────────┘      └─────────────────┘
-                                                         │
-                                                         ▼
-                     ┌──────────────────────────────────────┐
-                     │      SettleTransaction (Worker)      │
-                     │  - Transfer Money (PostgreSQL)       │
-                     │  - Publish Events (Event Grid MSI)   │
-                     └──────────────────────────────────────┘
-                                    │
-                     ┌──────────────┴──────────────┐
-                     ▼                             ▼
-            ┌─────────────────┐        ┌──────────────────┐
-            │   Event Grid    │───────▶│  Event Handlers  │
-            │  (Domain Events)│        │  (Notifications, │
-            └─────────────────┘        │   Analytics, etc)│
-                                       └──────────────────┘
+┌──────────────┐     ┌──────────────────┐     ┌─────────────────────┐
+│   Standard   │────▶│ ProcessPayment   │────▶│  Storage Queue      │
+│   Transfers  │     │   (Validator)    │     │  (transactions)     │
+│   (HTTP)     │     └──────────────────┘     └─────────────────────┘
+└──────────────┘                                        │
+                                                        ▼
+                                         ┌──────────────────────────┐
+                                         │  SettleTransaction       │
+                                         │  - Transfer Money (PG)   │
+                                         │  - Publish Events        │
+                                         └──────────────────────────┘
+
+┌──────────────┐     ┌───────────────────┐    ┌─────────────────────┐
+│   Critical   │────▶│SendCriticalPayment│────▶│  Service Bus Queue  │
+│   Payments   │     │  (HTTP Endpoint)  │    │  (critical-payments)│
+│   (HTTP)     │     └───────────────────┘    └─────────────────────┘
+└──────────────┘                                        │
+                                                        ▼
+                                         ┌──────────────────────────┐
+                                         │ProcessCriticalPayment    │
+                                         │- Guaranteed Delivery     │
+                                         │- DLQ (10 retries)        │
+                                         │- Duplicate Detection     │
+                                         └──────────────────────────┘
+                                                        │
+                                        ┌───────────────┴────────────┐
+                                        ▼                            ▼
+                              ┌─────────────────┐        ┌──────────────────┐
+                              │   Event Grid    │───────▶│  Event Handlers  │
+                              │  (Domain Events)│        │  (Notifications, │
+                              └─────────────────┘        │   Analytics, etc)│
+                                                         └──────────────────┘
 ```
+
+**Queue Selection Strategy:**
+- **Storage Queue**: High-volume, standard transfers (~$0.01/month idle cost)
+- **Service Bus**: Critical payments requiring guaranteed delivery, DLQ, duplicate detection (~$10/month)
 
 ## ✨ Features
 
@@ -148,7 +167,9 @@ FintechProject/
 │   │       └── EventGridPublisher.cs
 │   └── Functions/                 # Azure Functions endpoints
 │       ├── ProcessPayment.cs      # HTTP → Queue
-│       ├── SettleTransaction.cs   # Queue → DB + Events
+│       ├── SettleTransaction.cs   # Storage Queue → DB + Events
+│       ├── ProcessCriticalPayment.cs  # Service Bus → DB + Events (DLQ)
+│       ├── SendCriticalPayment.cs     # HTTP → Service Bus
 │       ├── GetProcessedTransactions.cs
 │       ├── GetCreditCards.cs
 │       └── OnTransactionProcessed.cs
@@ -159,7 +180,8 @@ FintechProject/
 ├── database/
 │   ├── setup.sql                 # Schema + seed data
 │   └── add_credit_cards_table.sql
-└── queue-send-demo.ps1           # Local testing utility
+├── queue-send-demo.ps1           # Storage Queue testing
+└── servicebus-send-demo.ps1      # Service Bus testing
 ```
 
 ## 🧪 Testing
@@ -178,7 +200,7 @@ dotnet test --collect:"XPlat Code Coverage"
 ## 📊 API Endpoints
 
 ### `POST /api/ProcessPayment`
-Validate and enqueue a payment/transfer request.
+Validate and enqueue a standard payment/transfer request to **Storage Queue**.
 
 **Request**:
 ```json
@@ -190,7 +212,33 @@ Validate and enqueue a payment/transfer request.
 }
 ```
 
-**Response**: `202 Accepted` (queued for processing)
+**Response**: `202 Accepted` (queued to Storage Queue for processing)
+
+---
+
+### `POST /api/critical-payment`
+Enqueue a **critical payment** requiring guaranteed delivery via **Service Bus**.
+
+**Request**:
+```json
+{
+  "cardNumber": "4532015112830366",
+  "toCardNumber": "5425233430109903",
+  "amount": 5000.00,
+  "currency": "USD"
+}
+```
+
+**Response**: `202 Accepted` (queued to Service Bus with DLQ and duplicate detection)
+
+**Features**:
+- ✅ Guaranteed delivery (Service Bus Standard tier)
+- ✅ Dead Letter Queue after 10 retries
+- ✅ Duplicate detection (10-minute window)
+- ✅ 5-minute message lock duration
+- ✅ Event Grid domain events on success/failure
+
+---
 
 ### `GET /api/GetProcessedTransactions`
 Retrieve transaction history.
@@ -256,12 +304,18 @@ Published domain events for downstream subscribers:
 | Azure Functions | Consumption | $0-5 (1M executions free) |
 | Storage Account | Standard LRS | $1-2 |
 | Storage Queue | Pay-per-op | $0.01 |
+| **Service Bus** | **Standard** | **$10** |
 | Event Grid | Custom Topic | $0.60/million ops |
 | Application Insights | 5 items/sec | $2-5 |
 | PostgreSQL | Flexible Server (B1ms) | $12-15 |
-| **Total** | | **~$15-28/month** |
+| **Total** | | **~$25-38/month** |
 
-*Idle cost (no traffic): ~$13/month*
+*Idle cost (no traffic): ~$23/month*
+
+**Cost Breakdown:**
+- **Storage Queue**: Near-zero cost for high-volume standard transfers
+- **Service Bus Standard**: Fixed $10/month base cost provides guaranteed delivery, DLQ, and duplicate detection for critical payments
+- **Hybrid approach**: Balances cost optimization (Storage Queue) with enterprise features (Service Bus)
 
 ## 🛡️ Security Considerations
 
