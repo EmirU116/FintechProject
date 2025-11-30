@@ -132,8 +132,8 @@ resource serviceBusNamespace 'Microsoft.ServiceBus/namespaces@2022-10-01-preview
   name: 'fintech-sb-${uniqueString(resourceGroup().id)}'
   location: location
   sku: {
-    name: 'Basic'
-    tier: 'Basic'
+    name: 'Standard'
+    tier: 'Standard'
   }
   properties: {
     minimumTlsVersion: '1.2'
