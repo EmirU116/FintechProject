@@ -2,16 +2,43 @@ using System.Text.Json;
 using Azure.Messaging;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Logging;
+using Azure.Communication.Email;
+using Azure.Communication.Sms;
+using Azure;
 
 namespace Source.Functions;
 
 public class SendTransactionNotification
 {
     private readonly ILogger<SendTransactionNotification> _logger;
+    private readonly EmailClient? _emailClient;
+    private readonly SmsClient? _smsClient;
+    private readonly string? _emailSender;
+    private readonly string? _emailTo;
+    private readonly string? _smsFrom;
+    private readonly string? _smsTo;
 
     public SendTransactionNotification(ILogger<SendTransactionNotification> logger)
     {
         _logger = logger;
+        var acsConn = Environment.GetEnvironmentVariable("ACS_CONNECTION_STRING");
+        _emailSender = Environment.GetEnvironmentVariable("EMAIL_SENDER_ADDRESS");
+        _emailTo = Environment.GetEnvironmentVariable("NOTIFY_EMAIL_TO");
+        _smsFrom = Environment.GetEnvironmentVariable("SMS_SENDER_NUMBER");
+        _smsTo = Environment.GetEnvironmentVariable("NOTIFY_SMS_TO");
+
+        if (!string.IsNullOrWhiteSpace(acsConn))
+        {
+            try
+            {
+                _emailClient = new EmailClient(acsConn);
+                _smsClient = new SmsClient(acsConn);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to initialize ACS clients");
+            }
+        }
     }
 
     [Function("SendTransactionNotification")]
@@ -45,20 +72,18 @@ public class SendTransactionNotification
 
             _logger.LogInformation("Notification message: {Message}", message);
 
-            // Integrate with notification services (simulated)
-            // In production, replace with actual SendGrid/Twilio/Azure Communication Services
             var notificationTasks = new List<Task>();
 
-            // Simulate Email notification
+            // Email notification (ACS if configured, else simulate)
             notificationTasks.Add(SendEmailNotificationAsync(eventData, message));
 
-            // Simulate SMS notification for high-value transactions
+            // SMS notification for high-value transactions (ACS if configured, else simulate)
             if (eventData.Amount > 1000)
             {
                 notificationTasks.Add(SendSmsNotificationAsync(eventData, message));
             }
 
-            // Simulate Push notification
+            // Optional simulated push notification
             notificationTasks.Add(SendPushNotificationAsync(eventData, message));
 
             await Task.WhenAll(notificationTasks);
@@ -74,39 +99,53 @@ public class SendTransactionNotification
 
     private async Task SendEmailNotificationAsync(TransactionEventData eventData, string message)
     {
-        // Simulate email sending delay
-        await Task.Delay(50);
-        
-        _logger.LogInformation(
-            "📧 Email sent: To=cardholder@example.com, Subject=Transaction Alert, TransactionId={TransactionId}",
-            eventData.TransactionId);
-        
-        // In production:
-        // await _sendGridClient.SendEmailAsync(new SendGridMessage
-        // {
-        //     To = new[] { new EmailAddress(cardholderEmail) },
-        //     Subject = "Transaction Alert",
-        //     PlainTextContent = message,
-        //     HtmlContent = $"<p>{message}</p>"
-        // });
+        if (_emailClient != null && !string.IsNullOrWhiteSpace(_emailSender) && !string.IsNullOrWhiteSpace(_emailTo))
+        {
+            try
+            {
+                var subject = "Transaction Alert";
+                var html = $"<p>{message}</p><p>TransactionId: {eventData.TransactionId}</p>";
+                var sendResult = await _emailClient.SendAsync(
+                    WaitUntil.Completed,
+                    senderAddress: _emailSender,
+                    recipientAddress: _emailTo,
+                    subject: subject,
+                    htmlContent: html,
+                    plainTextContent: message);
+
+                _logger.LogInformation("📧 Email sent via ACS: To={To}, Status={Status}, TransactionId={TransactionId}", _emailTo, sendResult.Value.Status, eventData.TransactionId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to send email via ACS");
+            }
+        }
+        else
+        {
+            await Task.Delay(50);
+            _logger.LogInformation("📧 Email simulated: To={To}, TransactionId={TransactionId}", _emailTo ?? "cardholder@example.com", eventData.TransactionId);
+        }
     }
 
     private async Task SendSmsNotificationAsync(TransactionEventData eventData, string message)
     {
-        // Simulate SMS sending delay
-        await Task.Delay(50);
-        
-        _logger.LogInformation(
-            "📱 SMS sent: To=+1234567890, Message={Message}, TransactionId={TransactionId}",
-            message.Substring(0, Math.Min(50, message.Length)),
-            eventData.TransactionId);
-        
-        // In production:
-        // await _twilioClient.SendMessageAsync(new CreateMessageOptions(new PhoneNumber(phoneNumber))
-        // {
-        //     From = new PhoneNumber(fromPhoneNumber),
-        //     Body = message
-        // });
+        if (_smsClient != null && !string.IsNullOrWhiteSpace(_smsFrom) && !string.IsNullOrWhiteSpace(_smsTo))
+        {
+            try
+            {
+                var resp = await _smsClient.SendAsync(from: _smsFrom, to: _smsTo, message: message);
+                _logger.LogInformation("📱 SMS sent via ACS: To={To}, Success={Success}, TransactionId={TransactionId}", _smsTo, resp.Value.Successful, eventData.TransactionId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to send SMS via ACS");
+            }
+        }
+        else
+        {
+            await Task.Delay(50);
+            _logger.LogInformation("📱 SMS simulated: To={To}, TransactionId={TransactionId}", _smsTo ?? "+1234567890", eventData.TransactionId);
+        }
     }
 
     private async Task SendPushNotificationAsync(TransactionEventData eventData, string message)
