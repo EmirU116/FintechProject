@@ -9,4 +9,5 @@ public class TransactionEventData
     public string ToCardMasked { get; set; } = string.Empty;
     public DateTime ProcessedAtUtc { get; set; }
     public string? Reason { get; set; }
+    public string Status { get; set; } = string.Empty;
 }

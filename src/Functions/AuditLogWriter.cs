@@ -2,6 +2,7 @@ using System.Text.Json;
 using Azure.Messaging;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Logging;
+using Source.Core;
 using Source.Core.Database;
 
 namespace Source.Functions;
@@ -37,9 +38,9 @@ public class AuditLogWriter
                 RecordedAt = DateTime.UtcNow
             };
 
-            // TODO: Uncomment when audit_events table is created
-            // await _dbContext.AuditEvents.AddAsync(auditEntry);
-            // await _dbContext.SaveChangesAsync();
+            // Store audit event in database
+            await _dbContext.AuditEvents.AddAsync(auditEntry);
+            await _dbContext.SaveChangesAsync();
 
             _logger.LogInformation(
                 "✅ Audit log written: EventId={EventId}, Type={Type}, Subject={Subject}",
@@ -55,16 +56,4 @@ public class AuditLogWriter
         }
     }
 
-    // TODO: Move to src/Core/AuditEvent.cs when table is created
-    private class AuditEvent
-    {
-        public Guid Id { get; set; }
-        public string EventId { get; set; } = string.Empty;
-        public string EventType { get; set; } = string.Empty;
-        public string EventSource { get; set; } = string.Empty;
-        public string EventSubject { get; set; } = string.Empty;
-        public string EventData { get; set; } = string.Empty;
-        public DateTime EventTime { get; set; }
-        public DateTime RecordedAt { get; set; }
-    }
 }

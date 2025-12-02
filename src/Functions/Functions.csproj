@@ -41,6 +41,10 @@
     <Compile Include="..\Core\Events\TransactionEventData.cs" Link="Events\TransactionEventData.cs" />
     <Compile Include="..\Core\Events\TransactionQueuedEventData.cs" Link="Events\TransactionQueuedEventData.cs" />
     <Compile Include="..\Core\Events\FraudAlertEventData.cs" Link="Events\FraudAlertEventData.cs" />
+    <Compile Include="..\Core\Events\FraudAlertTriggeredEventData.cs" Link="Events\FraudAlertTriggeredEventData.cs" />
+    <Compile Include="..\Core\AuditEvent.cs" Link="Models\AuditEvent.cs" />
+    <Compile Include="..\Core\FraudAlert.cs" Link="Models\FraudAlert.cs" />
+    <Compile Include="..\Core\TransactionMetric.cs" Link="Models\TransactionMetric.cs" />
   </ItemGroup>
 
 </Project>

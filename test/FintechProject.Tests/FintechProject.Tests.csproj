@@ -43,6 +43,9 @@
     <Compile Include="..\..\src\Core\Database\TransactionRepository.cs" Link="Core\Database\TransactionRepository.cs" />
     <Compile Include="..\..\src\Core\Database\ICreditCardRepository.cs" Link="Core\Database\ICreditCardRepository.cs" />
     <Compile Include="..\..\src\Core\Database\CreditCardRepository.cs" Link="Core\Database\CreditCardRepository.cs" />
+    <Compile Include="..\..\src\Core\AuditEvent.cs" Link="Core\AuditEvent.cs" />
+    <Compile Include="..\..\src\Core\FraudAlert.cs" Link="Core\FraudAlert.cs" />
+    <Compile Include="..\..\src\Core\TransactionMetric.cs" Link="Core\TransactionMetric.cs" />
   </ItemGroup>
 
   <ItemGroup>

@@ -2,16 +2,21 @@ using System.Text.Json;
 using Azure.Messaging;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Logging;
+using Microsoft.EntityFrameworkCore;
 
 namespace Source.Functions;
 
 public class TransactionAnalytics
 {
     private readonly ILogger<TransactionAnalytics> _logger;
+    private readonly Source.Core.Database.ApplicationDbContext _dbContext;
 
-    public TransactionAnalytics(ILogger<TransactionAnalytics> logger)
+    public TransactionAnalytics(
+        ILogger<TransactionAnalytics> logger,
+        Source.Core.Database.ApplicationDbContext dbContext)
     {
         _logger = logger;
+        _dbContext = dbContext;
     }
 
     [Function("TransactionAnalytics")]
@@ -47,17 +52,75 @@ public class TransactionAnalytics
                 dayOfWeek
             );
 
-            // TODO: Update transaction_metrics table with:
-            // - Increment transaction count for the hour/day
-            // - Add to total volume for the currency
-            // - Calculate success/failure rates
-            // - Track average transaction amounts
+            // Update transaction_metrics table
+            var metricDate = eventData.ProcessedAtUtc.Date;
+            var metricKey = new { metricDate, hour, currency = eventData.Currency };
 
-            // TODO: Push custom metrics to Application Insights
-            // _telemetryClient.TrackMetric("TransactionVolume", eventData.Amount);
-            // _telemetryClient.TrackMetric("TransactionsPerHour", 1);
+            var existingMetric = await _dbContext.TransactionMetrics
+                .FirstOrDefaultAsync(m => 
+                    m.MetricDate.Date == metricDate && 
+                    m.Hour == hour && 
+                    m.Currency == eventData.Currency);
 
-            _logger.LogInformation("✅ Analytics updated for transaction {TransactionId}", eventData.TransactionId);
+            if (existingMetric != null)
+            {
+                // Update existing metric
+                existingMetric.TransactionCount++;
+                existingMetric.TotalVolume += eventData.Amount;
+                existingMetric.AverageAmount = existingMetric.TotalVolume / existingMetric.TransactionCount;
+                existingMetric.SuccessCount++; // Assuming this event means success
+                existingMetric.LastUpdated = DateTime.UtcNow;
+            }
+            else
+            {
+                // Create new metric entry
+                var newMetric = new Source.Core.TransactionMetric
+                {
+                    Id = Guid.NewGuid(),
+                    MetricDate = metricDate,
+                    Hour = hour,
+                    DayOfWeek = dayOfWeek.ToString(),
+                    Currency = eventData.Currency,
+                    TransactionCount = 1,
+                    TotalVolume = eventData.Amount,
+                    AverageAmount = eventData.Amount,
+                    SuccessCount = 1,
+                    FailureCount = 0,
+                    LastUpdated = DateTime.UtcNow
+                };
+                await _dbContext.TransactionMetrics.AddAsync(newMetric);
+            }
+
+            await _dbContext.SaveChangesAsync();
+
+            // Push custom metrics to Application Insights
+            var metrics = new Dictionary<string, double>
+            {
+                { "TransactionVolume", (double)eventData.Amount },
+                { "TransactionsPerHour", 1 },
+                { "Hour", hour },
+                { "DayOfWeek", (int)dayOfWeek }
+            };
+
+            var properties = new Dictionary<string, object>
+            {
+                { "Currency", eventData.Currency },
+                { "TransactionId", eventData.TransactionId },
+                { "FromCard", eventData.FromCardMasked },
+                { "ToCard", eventData.ToCardMasked }
+            };
+
+            foreach (var metric in metrics)
+            {
+                _logger.LogMetric(metric.Key, metric.Value, properties);
+            }
+
+            _logger.LogInformation(
+                "✅ Analytics updated for transaction {TransactionId}: Count={Count}, Volume={Volume}, Avg={Avg}",
+                eventData.TransactionId,
+                existingMetric?.TransactionCount ?? 1,
+                existingMetric?.TotalVolume ?? eventData.Amount,
+                existingMetric?.AverageAmount ?? eventData.Amount);
 
             await Task.CompletedTask;
         }

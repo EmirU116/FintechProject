@@ -66,9 +66,9 @@ namespace Source.Core.Transaction
 
         private static bool ValidateCurrency(string currency)
         {
-            // TODO:
-            // make the converting curreny 
-
+            // Validates currency code against ISO 4217 standard
+            // Supports major world currencies for international money transfers
+            
             // checks if string is null or is just white spaces with input parameters - if so, return false 
             if (string.IsNullOrWhiteSpace(currency))
                 return false;
