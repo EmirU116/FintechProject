@@ -3,6 +3,7 @@
 
 # Azure Functions localsettings file
 local.settings.json
+__azurite_db_*.json
 
 # User-specific files
 *.suo
