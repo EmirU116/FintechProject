@@ -47,6 +47,7 @@
     <Compile Include="..\Core\AuditEvent.cs" Link="Models\AuditEvent.cs" />
     <Compile Include="..\Core\FraudAlert.cs" Link="Models\FraudAlert.cs" />
     <Compile Include="..\Core\TransactionMetric.cs" Link="Models\TransactionMetric.cs" />
+    <Compile Include="..\Core\Middleware\RateLimiter.cs" Link="Middleware\RateLimiter.cs" />
   </ItemGroup>
 
 </Project>
