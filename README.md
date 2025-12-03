@@ -192,7 +192,7 @@ curl -X POST https://your-function-app.azurewebsites.net/api/ProcessPayment \
 }
 ```
 
-📖 **[Full API Documentation →](./API_REFERENCE.md)**
+📖 **[Full API Documentation →](./docs/guides/API_REFERENCE.md)**
 
 ---
 
@@ -216,7 +216,7 @@ cd FintechProject
 
 ```bash
 # Windows
-.\setup-database.ps1
+.\scripts\setup-database.ps1
 
 # Or manually
 psql -U postgres -d postgres -f database/setup.sql
@@ -255,10 +255,10 @@ curl -X POST http://localhost:7071/api/seed-cards
 ### 6. Test Payment
 
 ```bash
-.\test-transfer.ps1
+.\scripts\test-transfer.ps1
 ```
 
-📘 **[Detailed Setup Guide →](./docs/POSTGRESQL_SETUP.md)**
+📘 **[Detailed Setup Guide →](./docs/setup/POSTGRESQL_INTEGRATION.md)**
 
 ---
 
@@ -283,7 +283,7 @@ dotnet test /p:CollectCoverage=true /p:CoverageReportsFormat=opencover
 - 📊 3 test suites
 - ⚡ ~3 seconds execution time
 
-📖 **[Testing Guide →](./UNIT_TESTING_GUIDE.md)**
+📖 **[Testing Guide →](./docs/guides/UNIT_TESTING_GUIDE.md)**
 
 ---
 
@@ -321,7 +321,7 @@ dotnet test /p:CollectCoverage=true /p:CoverageReportsFormat=opencover
    └─→ TransactionAnalytics → Metrics aggregation
 ```
 
-📖 **[Event Flow Documentation →](./ASYNC_TRANSFER_FLOW.md)**
+📖 **[Event Flow Documentation →](./docs/guides/ASYNC_TRANSFER_FLOW.md)**
 
 ---
 
@@ -383,7 +383,7 @@ The project includes automated deployment pipelines:
 4. Deploy function app
 5. Run database migrations
 
-📖 **[CI/CD Setup Guide →](./CICD_SETUP.md)**
+📖 **[CI/CD Setup Guide →](./docs/deployment/CICD_SETUP.md)**
 
 ---
 
@@ -419,15 +419,37 @@ FintechProject/
 
 ## 📚 Documentation
 
+### 📖 Guides
 | Document | Description |
 |----------|-------------|
-| [API Reference](./API_REFERENCE.md) | Complete API documentation |
-| [Money Transfer Guide](./MONEY_TRANSFER_GUIDE.md) | Transfer system overview |
+| [API Reference](./docs/guides/API_REFERENCE.md) | Complete API documentation |
+| [Money Transfer Guide](./docs/guides/MONEY_TRANSFER_GUIDE.md) | Transfer system overview |
+| [Unit Testing Guide](./docs/guides/UNIT_TESTING_GUIDE.md) | Testing documentation |
+| [Portfolio Guide](./docs/guides/PORTFOLIO_GUIDE.md) | Interview preparation |
+| [Rate Limiting](./docs/guides/RATE_LIMITING.md) | Rate limiting implementation |
+| [Async Flow](./docs/guides/ASYNC_TRANSFER_FLOW.md) | Transaction flow diagram |
+
+### ⚙️ Setup & Configuration
+| Document | Description |
+|----------|-------------|
+| [PostgreSQL Setup](./docs/setup/POSTGRESQL_INTEGRATION.md) | Database configuration |
 | [Event Grid Integration](./docs/EVENT_GRID_GUIDE.md) | Event-driven architecture |
-| [Unit Testing Guide](./UNIT_TESTING_GUIDE.md) | Testing documentation |
-| [PostgreSQL Setup](./POSTGRESQL_INTEGRATION.md) | Database configuration |
-| [CI/CD Setup](./CICD_SETUP.md) | Deployment pipelines |
-| [Async Flow](./ASYNC_TRANSFER_FLOW.md) | Transaction flow diagram |
+| [Database Setup (Windows)](./docs/setup/DATABASE_SETUP_WINDOWS.md) | Windows-specific setup |
+
+### 🚀 Deployment
+| Document | Description |
+|----------|-------------|
+| [CI/CD Setup](./docs/deployment/CICD_SETUP.md) | Complete deployment guide |
+| [CI/CD Quickstart](./docs/deployment/CICD_QUICKSTART.md) | Quick reference |
+| [Deployment Order](./docs/deployment/DEPLOYMENT_ORDER.md) | Step-by-step deployment |
+
+### 🛠️ Scripts
+| Script | Description |
+|--------|-------------|
+| [setup-database.ps1](./scripts/setup-database.ps1) | Database initialization |
+| [test-transfer.ps1](./scripts/test-transfer.ps1) | Payment testing |
+| [setup-azure-credentials.ps1](./scripts/setup-azure-credentials.ps1) | Azure credentials setup |
+| [diagnose-database.ps1](./scripts/diagnose-database.ps1) | Database diagnostics |
 
 ---
 
