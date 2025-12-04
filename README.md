@@ -124,6 +124,8 @@ flowchart TB
 - ✅ **Transaction Confirmations** - Sent to card holders
 - ✅ **High-Value Alerts** - SMS for transactions > $1,000
 - ✅ **Immutable Audit Log** - Complete event history in database
+- ✅ **Real-Time Console Audit** - Formatted audit logs in terminal
+- ✅ **Audit Log API** - REST endpoint for retrieving audit logs with filtering
 - ✅ **CloudEvents Standard** - Industry-standard event format
 
 ### 🧪 Testing & Quality
@@ -424,6 +426,7 @@ FintechProject/
 |----------|-------------|
 | [API Reference](./docs/guides/API_REFERENCE.md) | Complete API documentation |
 | [Money Transfer Guide](./docs/guides/MONEY_TRANSFER_GUIDE.md) | Transfer system overview |
+| [Audit Logging](./docs/AUDIT_LOGGING.md) | **NEW** - Audit log implementation & API |
 | [Unit Testing Guide](./docs/guides/UNIT_TESTING_GUIDE.md) | Testing documentation |
 | [Portfolio Guide](./docs/guides/PORTFOLIO_GUIDE.md) | Interview preparation |
 | [Rate Limiting](./docs/guides/RATE_LIMITING.md) | Rate limiting implementation |

@@ -40,6 +40,14 @@ public class SettleTransaction
         _logger.LogInformation("🔵 ═══ SERVICE BUS TRIGGER FIRED ═══");
         _logger.LogInformation("🔵 Processing transaction from Service Bus queue");
 
+        // Audit: Service Bus message received
+        AuditLogger.LogAuditToConsole("SERVICE BUS TRIGGERED", "PENDING", new Dictionary<string, object>
+        {
+            { "Function", "SettleTransaction" },
+            { "Queue", "transactions" },
+            { "Timestamp", DateTime.UtcNow }
+        });
+
         try
         {
             var transaction = JsonSerializer.Deserialize<TransactionMessage>(messageBody, new JsonSerializerOptions
@@ -50,11 +58,21 @@ public class SettleTransaction
             if (transaction == null)
             {
                 _logger.LogError("Failed to deserialize transaction from queue");
+                AuditLogger.LogAuditFailure("DESERIALIZATION", "UNKNOWN", "Failed to deserialize transaction message");
                 throw new InvalidOperationException("Invalid transaction in queue message");
             }
 
             _logger.LogInformation("🔵 Received transaction message from queue");
             _logger.LogInformation("🔵 Transaction ID: {TransactionId}", transaction.Id);
+
+            // Audit: Transaction received from queue
+            AuditLogger.LogAuditToConsole("TRANSACTION RECEIVED", transaction.Id.ToString(), new Dictionary<string, object>
+            {
+                { "Amount", transaction.Amount },
+                { "Currency", transaction.Currency },
+                { "FromCard", transaction.CardNumberMasked },
+                { "ToCard", transaction.ToCardNumberMasked ?? "N/A" }
+            });
 
             // Check if this is a transfer (has destination card)
             if (!string.IsNullOrEmpty(transaction.ToCardNumber))
@@ -66,6 +84,16 @@ public class SettleTransaction
                     transaction.CardNumberMasked,
                     transaction.ToCardNumberMasked
                 );
+
+                // Audit: Starting transfer processing
+                AuditLogger.LogAuditToConsole("PROCESSING TRANSFER", transaction.Id.ToString(), new Dictionary<string, object>
+                {
+                    { "Stage", "Executing Money Transfer" },
+                    { "FromCard", transaction.CardNumberMasked },
+                    { "ToCard", transaction.ToCardNumberMasked ?? "N/A" },
+                    { "Amount", transaction.Amount },
+                    { "Currency", transaction.Currency }
+                });
 
                 // Execute the money transfer
                 var result = await _transferService.TransferMoneyAsync(
@@ -87,6 +115,17 @@ public class SettleTransaction
                         result.ToAccountNewBalance
                     );
                     _logger.LogInformation("🔵 ✓ Database updated successfully");
+
+                    // Audit: Transfer succeeded
+                    AuditLogger.LogAuditSuccess("TRANSFER COMPLETED", result.TransactionId.ToString(), "Money transfer successful");
+                    AuditLogger.LogAuditToConsole("DATABASE UPDATED", result.TransactionId.ToString(), new Dictionary<string, object>
+                    {
+                        { "FromBalance", result.FromAccountNewBalance },
+                        { "ToBalance", result.ToAccountNewBalance },
+                        { "Amount", transaction.Amount },
+                        { "Currency", transaction.Currency },
+                        { "Status", "SUCCESS" }
+                    });
 
                     // Publish Transaction.Settled event to Event Grid
                     try
@@ -133,6 +172,19 @@ public class SettleTransaction
                         result.TransactionId,
                         result.Message
                     );
+
+                    // Audit: Transfer failed
+                    AuditLogger.LogAuditFailure("TRANSFER FAILED", result.TransactionId.ToString(), result.Message);
+                    AuditLogger.LogAuditToConsole("TRANSACTION FAILED", result.TransactionId.ToString(), new Dictionary<string, object>
+                    {
+                        { "Reason", result.Message },
+                        { "Amount", transaction.Amount },
+                        { "Currency", transaction.Currency },
+                        { "FromCard", transaction.CardNumberMasked },
+                        { "ToCard", transaction.ToCardNumberMasked ?? "N/A" },
+                        { "Status", "FAILED" }
+                    });
+                    
                     // Optionally publish a failure event
                     try
                     {

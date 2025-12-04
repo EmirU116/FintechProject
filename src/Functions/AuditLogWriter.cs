@@ -42,6 +42,39 @@ public class AuditLogWriter
             await _dbContext.AuditEvents.AddAsync(auditEntry);
             await _dbContext.SaveChangesAsync();
 
+            // Log detailed audit information to console/terminal
+            Console.WriteLine("╔══════════════════════════════════════════════════════════════════════════╗");
+            Console.WriteLine($"║ AUDIT LOG ENTRY                                                          ║");
+            Console.WriteLine("╠══════════════════════════════════════════════════════════════════════════╣");
+            Console.WriteLine($"║ Event ID:      {auditEntry.EventId,-58} ║");
+            Console.WriteLine($"║ Event Type:    {auditEntry.EventType,-58} ║");
+            Console.WriteLine($"║ Subject:       {auditEntry.EventSubject,-58} ║");
+            Console.WriteLine($"║ Source:        {auditEntry.EventSource,-58} ║");
+            Console.WriteLine($"║ Event Time:    {auditEntry.EventTime:yyyy-MM-dd HH:mm:ss.fff} UTC{"",-38} ║");
+            Console.WriteLine($"║ Recorded At:   {auditEntry.RecordedAt:yyyy-MM-dd HH:mm:ss.fff} UTC{"",-38} ║");
+            Console.WriteLine("╠══════════════════════════════════════════════════════════════════════════╣");
+            Console.WriteLine($"║ Event Data:                                                              ║");
+            
+            // Pretty print the event data
+            try
+            {
+                var eventDataObj = JsonSerializer.Deserialize<object>(auditEntry.EventData);
+                var prettyJson = JsonSerializer.Serialize(eventDataObj, new JsonSerializerOptions { WriteIndented = true });
+                var lines = prettyJson.Split('\n');
+                foreach (var line in lines)
+                {
+                    var trimmedLine = line.Length > 70 ? line.Substring(0, 67) + "..." : line;
+                    Console.WriteLine($"║ {trimmedLine,-72} ║");
+                }
+            }
+            catch
+            {
+                // If JSON parsing fails, just print the raw data
+                Console.WriteLine($"║ {auditEntry.EventData,-72} ║");
+            }
+            
+            Console.WriteLine("╚══════════════════════════════════════════════════════════════════════════╝");
+
             _logger.LogInformation(
                 "✅ Audit log written: EventId={EventId}, Type={Type}, Subject={Subject}",
                 auditEntry.EventId,

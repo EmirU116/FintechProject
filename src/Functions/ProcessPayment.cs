@@ -34,6 +34,14 @@ public class ProcessPayment
         _logger.LogInformation("🟢 [TRACE:{TraceId}] ═══ HTTP TRIGGER ENTRY POINT ═══", traceId);
         _logger.LogInformation("🟢 [TRACE:{TraceId}] Received payment/transfer request", traceId);
 
+        // Audit: HTTP request received
+        AuditLogger.LogAuditToConsole("HTTP REQUEST RECEIVED", traceId, new Dictionary<string, object>
+        {
+            { "Endpoint", "ProcessPayment" },
+            { "Method", "POST" },
+            { "Timestamp", DateTime.UtcNow }
+        });
+
         string requestBody = await new StreamReader(req.Body).ReadToEndAsync();
         
         if(string.IsNullOrWhiteSpace(requestBody))
@@ -77,6 +85,16 @@ public class ProcessPayment
             transferRequest.ToCardNumber[^4..]
         );
 
+        // Audit: Request validated
+        AuditLogger.LogAuditSuccess("REQUEST VALIDATED", traceId, $"Transfer of {transferRequest.Amount} {transferRequest.Currency ?? "USD"}");
+        AuditLogger.LogAuditToConsole("VALIDATION PASSED", traceId, new Dictionary<string, object>
+        {
+            { "Amount", transferRequest.Amount },
+            { "Currency", transferRequest.Currency ?? "USD" },
+            { "FromCard", $"****{transferRequest.FromCardNumber[^4..]}" },
+            { "ToCard", $"****{transferRequest.ToCardNumber[^4..]}" }
+        });
+
         // Convert to Transaction format for SettleTransaction
         var transaction = new TransactionMessage
         {
@@ -94,6 +112,18 @@ public class ProcessPayment
         
         _logger.LogInformation("🟢 [TRACE:{TraceId}] Transfer request queued with Transaction ID: {TransactionId}", traceId, transaction.Id);
         _logger.LogInformation("🟢 [TRACE:{TraceId}] Message sent to Azure Service Bus queue 'transactions'", traceId);
+
+        // Audit: Message queued to Service Bus
+        AuditLogger.LogAuditSuccess("QUEUED TO SERVICE BUS", transaction.Id.ToString(), "Transaction queued for processing");
+        AuditLogger.LogAuditToConsole("SERVICE BUS QUEUED", transaction.Id.ToString(), new Dictionary<string, object>
+        {
+            { "Queue", "transactions" },
+            { "TraceId", traceId },
+            { "Amount", transaction.Amount },
+            { "Currency", transaction.Currency },
+            { "FromCard", transaction.CardNumberMasked },
+            { "ToCard", transaction.ToCardNumberMasked }
+        });
 
         // Publish Transaction.Queued event to Event Grid
         try
