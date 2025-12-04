@@ -251,14 +251,6 @@ jobs:
         app-name: ${{ env.AZURE_FUNCTIONAPP_NAME }}
         package: ./output
 
-    - name: Sync Azure Functions triggers
-      run: |
-        echo "Syncing function triggers for ${{ env.AZURE_FUNCTIONAPP_NAME }}..."
-        az functionapp sync-triggers \
-          --name ${{ env.AZURE_FUNCTIONAPP_NAME }} \
-          --resource-group ${{ env.AZURE_RESOURCE_GROUP }}
-        echo "✅ Function triggers synced successfully"
-
     - name: Restart Function App
       run: |
         echo "Restarting function app ${{ env.AZURE_FUNCTIONAPP_NAME }}..."
