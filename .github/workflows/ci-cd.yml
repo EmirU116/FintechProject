@@ -251,6 +251,39 @@ jobs:
         app-name: ${{ env.AZURE_FUNCTIONAPP_NAME }}
         package: ./output
 
+    - name: Sync Azure Functions triggers
+      run: |
+        echo "Syncing function triggers for ${{ env.AZURE_FUNCTIONAPP_NAME }}..."
+        az functionapp deployment sync \
+          --name ${{ env.AZURE_FUNCTIONAPP_NAME }} \
+          --resource-group ${{ env.AZURE_RESOURCE_GROUP }}
+        echo "✅ Function triggers synced successfully"
+
+    - name: Restart Function App
+      run: |
+        echo "Restarting function app ${{ env.AZURE_FUNCTIONAPP_NAME }}..."
+        az functionapp restart \
+          --name ${{ env.AZURE_FUNCTIONAPP_NAME }} \
+          --resource-group ${{ env.AZURE_RESOURCE_GROUP }}
+        echo "✅ Function app restarted successfully"
+        
+        # Wait for app to be ready
+        echo "Waiting for function app to be ready..."
+        sleep 30
+        
+        # Verify function app is running
+        STATE=$(az functionapp show \
+          --name ${{ env.AZURE_FUNCTIONAPP_NAME }} \
+          --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+          --query "state" -o tsv)
+        echo "Function app state: $STATE"
+        
+        if [ "$STATE" = "Running" ]; then
+          echo "✅ Function app is running"
+        else
+          echo "::warning::Function app state is $STATE"
+        fi
+
     - name: Verify deployment
       run: |
         echo "✅ Deployment completed successfully"
