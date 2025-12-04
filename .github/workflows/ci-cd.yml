@@ -254,7 +254,7 @@ jobs:
     - name: Sync Azure Functions triggers
       run: |
         echo "Syncing function triggers for ${{ env.AZURE_FUNCTIONAPP_NAME }}..."
-        az functionapp deployment sync \
+        az functionapp sync-triggers \
           --name ${{ env.AZURE_FUNCTIONAPP_NAME }} \
           --resource-group ${{ env.AZURE_RESOURCE_GROUP }}
         echo "✅ Function triggers synced successfully"
