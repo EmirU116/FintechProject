@@ -139,8 +139,8 @@ jobs:
             'red' 
           }}
 
-    - name: Build Azure Functions
-      run: dotnet build src/Functions/Functions.csproj --configuration ${{ env.BUILD_CONFIGURATION }} --output ./output
+    - name: Publish Azure Functions
+      run: dotnet publish src/Functions/Functions.csproj --configuration ${{ env.BUILD_CONFIGURATION }} --output ./output --no-build
 
     - name: Publish Azure Functions artifact
       uses: actions/upload-artifact@v4
