@@ -3,7 +3,7 @@ using Azure.Messaging;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Logging;
 
-namespace Source.Functions;
+namespace Functions;
 
 public class FraudDetectionAnalyzer
 {

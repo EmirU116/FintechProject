@@ -4,7 +4,7 @@ using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Logging;
 using Microsoft.EntityFrameworkCore;
 
-namespace Source.Functions;
+namespace Functions;
 
 public class TransactionAnalytics
 {

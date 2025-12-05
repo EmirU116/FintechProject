@@ -6,7 +6,7 @@ using Source.Core.Database;
 using Source.Core;
 using System.Text.Json;
 
-namespace Source.Functions;
+namespace Functions;
 
 public class SeedAuditLogs
 {

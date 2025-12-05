@@ -12,7 +12,7 @@ using Source.Core.Database;
 using Microsoft.Azure.Functions.Worker.Http;
 using System.Net;
 
-namespace Source.Functions;
+namespace Functions;
 
 public class SettleTransaction
 {

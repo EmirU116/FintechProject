@@ -5,7 +5,7 @@ using Microsoft.Extensions.Logging;
 using Source.Core;
 using Source.Core.Database;
 
-namespace Source.Functions;
+namespace Functions;
 
 public class AuditLogWriter
 {

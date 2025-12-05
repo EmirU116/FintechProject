@@ -119,6 +119,10 @@ resource functionApp 'Microsoft.Web/sites@2022-03-01' = {
           value: 'dotnet-isolated'
         }
         {
+          name: 'WEBSITE_RUN_FROM_PACKAGE'
+          value: '1'
+        }
+        {
           name: 'APPINSIGHTS_INSTRUMENTATIONKEY'
           value: appInsights.properties.InstrumentationKey
         }
@@ -129,6 +133,7 @@ resource functionApp 'Microsoft.Web/sites@2022-03-01' = {
       ]
       ftpsState: 'FtpsOnly'
       minTlsVersion: '1.2'
+      netFrameworkVersion: 'v8.0'
       functionAppScaleLimit: 5
     }
     httpsOnly: true

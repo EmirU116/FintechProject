@@ -18,9 +18,6 @@ var builder = Host.CreateDefaultBuilder(args)
     })
     .ConfigureServices((context, services) =>
     {
-        // Register Worker extension - CRITICAL for function discovery
-        services.AddAzureFunctionsWorkerDefaults();
-
         // Register PostgreSQL Database Context
         var connectionString = context.Configuration.GetConnectionString("PostgreSqlConnection");
         services.AddDbContext<ApplicationDbContext>(options =>
@@ -36,7 +33,7 @@ var builder = Host.CreateDefaultBuilder(args)
         // Register Rate Limiting (optional - configure in local.settings.json)
         var rateLimitOptions = new RateLimitOptions
         {
-            Enabled = context.Configuration.GetValue<bool>("RateLimit:Enabled", false), // Disabled by default
+            Enabled = context.Configuration.GetValue<bool>("RateLimit:Enabled", false),
             MaxRequestsPerWindow = context.Configuration.GetValue<int>("RateLimit:MaxRequestsPerWindow", 100),
             WindowDuration = TimeSpan.FromMinutes(context.Configuration.GetValue<int>("RateLimit:WindowDurationMinutes", 1)),
             BurstLimit = context.Configuration.GetValue<int>("RateLimit:BurstLimit", 200)

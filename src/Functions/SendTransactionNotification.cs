@@ -6,7 +6,7 @@ using Azure.Communication.Email;
 using Azure.Communication.Sms;
 using Azure;
 
-namespace Source.Functions;
+namespace Functions;
 
 public class SendTransactionNotification
 {
