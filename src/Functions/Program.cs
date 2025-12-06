@@ -26,8 +26,7 @@ builder.Services.AddScoped<ICreditCardRepository, CreditCardRepository>();
 builder.Services.AddScoped<MoneyTransferService>();
 
 builder.Services
-    .AddApplicationInsightsTelemetryWorkerService()
-    .ConfigureFunctionsApplicationInsights();
+    .AddApplicationInsightsTelemetryWorkerService();
 
 // Register Event Grid publisher if configuration is present
 var topicEndpoint = builder.Configuration["EventGrid:TopicEndpoint"];
