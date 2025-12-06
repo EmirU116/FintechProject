@@ -32,7 +32,7 @@ env:
 
 jobs:
   # ========================================
-  # CI: Build, Test, Security, Coverage
+  # CI: Build, Test, Security, Coverage, testing
   # ========================================
   build-and-test:
     name: Build and Test
