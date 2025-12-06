@@ -1,0 +1,8 @@
+*.cs
+*.csproj
+.git*
+.vscode
+__blobstorage__
+__queuestorage__
+__azurite_db*__.json
+test

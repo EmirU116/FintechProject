@@ -140,13 +140,18 @@ jobs:
           }}
 
     - name: Publish Azure Functions
-      run: dotnet publish src/Functions/Functions.csproj --configuration ${{ env.BUILD_CONFIGURATION }} --output ./output --no-build
+      run: |
+        dotnet publish src/Functions/Functions.csproj \
+          --configuration ${{ env.BUILD_CONFIGURATION }} \
+          --output ./output \
+          --no-build
 
     - name: Publish Azure Functions artifact
       uses: actions/upload-artifact@v4
       with:
         name: ${{env.AZURE_FUNCTIONAPP_NAME}}
         path: ./output
+        retention-days: 1
 
   # ========================================
   # CodeQL Security Analysis
@@ -238,48 +243,71 @@ jobs:
 
     - name: Configure Function App Settings
       run: |
+        # Configure app settings before deployment
         az functionapp config appsettings set \
           --name ${{ env.AZURE_FUNCTIONAPP_NAME }} \
           --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
           --settings \
             "ServiceBusConnection=${{ steps.deploy.outputs.serviceBusConnectionString }}" \
-            "FUNCTIONS_WORKER_RUNTIME=dotnet-isolated"
+            "FUNCTIONS_WORKER_RUNTIME=dotnet-isolated" \
+            "FUNCTIONS_EXTENSION_VERSION=~4" \
+            "AzureWebJobsDisableHomepage=false"
 
     - name: Deploy to Azure Functions
       uses: Azure/functions-action@v1
       with:
         app-name: ${{ env.AZURE_FUNCTIONAPP_NAME }}
         package: ./output
+        respect-funcignore: true
+        scm-do-build-during-deployment: false
+        enable-oryx-build: false
 
-    # - name: Restart Function App
-    #   run: |
-    #     echo "Restarting function app ${{ env.AZURE_FUNCTIONAPP_NAME }}..."
-    #     az functionapp restart \
-    #       --name ${{ env.AZURE_FUNCTIONAPP_NAME }} \
-    #       --resource-group ${{ env.AZURE_RESOURCE_GROUP }}
-    #     echo "✅ Function app restarted successfully"
+    - name: Restart Function App
+      run: |
+        echo "🔄 Restarting function app to ensure triggers are loaded..."
+        az functionapp restart \
+          --name ${{ env.AZURE_FUNCTIONAPP_NAME }} \
+          --resource-group ${{ env.AZURE_RESOURCE_GROUP }}
         
-        # # Wait for app to be ready
-        # echo "Waiting for function app to be ready..."
-        # sleep 30
+        echo "⏳ Waiting for function app to restart..."
+        sleep 30
+
+    - name: Sync Function Triggers
+      run: |
+        echo "🔄 Syncing function triggers..."
         
-        # # Verify function app is running
-        # STATE=$(az functionapp show \
-        #   --name ${{ env.AZURE_FUNCTIONAPP_NAME }} \
-        #   --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
-        #   --query "state" -o tsv)
-        # echo "Function app state: $STATE"
+        # Get subscription ID
+        SUBSCRIPTION_ID=$(az account show --query id -o tsv)
         
-        # if [ "$STATE" = "Running" ]; then
-        #   echo "✅ Function app is running"
-        # else
-        #   echo "::warning::Function app state is $STATE"
-        # fi
+        # Sync triggers
+        az rest \
+          --method POST \
+          --uri "/subscriptions/$SUBSCRIPTION_ID/resourceGroups/${{ env.AZURE_RESOURCE_GROUP }}/providers/Microsoft.Web/sites/${{ env.AZURE_FUNCTIONAPP_NAME }}/syncfunctiontriggers?api-version=2023-01-01"
+        
+        echo "✅ Trigger sync completed"
+        
+        # Wait for sync to complete
+        sleep 15
 
     - name: Verify deployment
       run: |
+        echo "🔍 Verifying deployment..."
+        
+        # Get function app details
+        FUNC_APP_URL=$(az functionapp show \
+          --name ${{ env.AZURE_FUNCTIONAPP_NAME }} \
+          --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+          --query "defaultHostName" -o tsv)
+        
+        # List functions
+        echo "📋 Listing deployed functions..."
+        az functionapp function list \
+          --name ${{ env.AZURE_FUNCTIONAPP_NAME }} \
+          --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+          --query "[].{Name:name, Trigger:config.bindings[0].type}" -o table || echo "⚠️ Could not list functions yet (they may still be loading)"
+        
         echo "✅ Deployment completed successfully"
-        echo "🌐 Function App: https://${{ env.AZURE_FUNCTIONAPP_NAME }}.azurewebsites.net"
+        echo "🌐 Function App: https://$FUNC_APP_URL"
 
     - name: Azure Logout
       if: always()
