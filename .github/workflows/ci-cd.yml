@@ -157,18 +157,20 @@ jobs:
         test -f ./output/Functions.dll && echo "✅ Functions.dll found" || echo "❌ Functions.dll missing"
         
         echo ""
-        echo "🔍 CRITICAL: Searching for function.json files..."
-        find ./output -name "function.json" -type f
+        echo "🔍 CRITICAL: Checking for function metadata..."
         
-        FUNCTION_JSON_COUNT=$(find ./output -name "function.json" -type f | wc -l)
-        echo "Found $FUNCTION_JSON_COUNT function.json files"
-        
-        if [ "$FUNCTION_JSON_COUNT" -eq 0 ]; then
-          echo "❌ ERROR: No function.json files generated!"
+        if [ -f "./output/functions.metadata" ]; then
+          echo "✅ functions.metadata found (.NET Isolated Worker v2.x)"
+          echo ""
+          echo "📋 Function count:"
+          cat ./output/functions.metadata | grep -o '"name"' | wc -l
+          echo ""
+          echo "📝 Discovered functions:"
+          cat ./output/functions.metadata | grep '"name":' | head -15
+        else
+          echo "❌ ERROR: No functions.metadata file generated!"
           echo "This means the Functions SDK didn't generate metadata."
           exit 1
-        else
-          echo "✅ Function metadata generated successfully"
         fi
 
     - name: Publish Azure Functions artifact
