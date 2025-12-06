@@ -141,9 +141,35 @@ jobs:
 
     - name: Publish Azure Functions
       run: |
+        echo "📦 Publishing Azure Functions..."
         dotnet publish src/Functions/Functions.csproj \
           --configuration ${{ env.BUILD_CONFIGURATION }} \
-          --output ./output
+          --output ./output \
+          --verbosity normal
+        
+        echo "📋 Verifying publish output..."
+        ls -la ./output
+        
+        echo "🔍 Checking for host.json..."
+        test -f ./output/host.json && echo "✅ host.json found" || echo "❌ host.json missing"
+        
+        echo "🔍 Checking for function assemblies..."
+        test -f ./output/Functions.dll && echo "✅ Functions.dll found" || echo "❌ Functions.dll missing"
+        
+        echo ""
+        echo "🔍 CRITICAL: Searching for function.json files..."
+        find ./output -name "function.json" -type f
+        
+        FUNCTION_JSON_COUNT=$(find ./output -name "function.json" -type f | wc -l)
+        echo "Found $FUNCTION_JSON_COUNT function.json files"
+        
+        if [ "$FUNCTION_JSON_COUNT" -eq 0 ]; then
+          echo "❌ ERROR: No function.json files generated!"
+          echo "This means the Functions SDK didn't generate metadata."
+          exit 1
+        else
+          echo "✅ Function metadata generated successfully"
+        fi
 
     - name: Publish Azure Functions artifact
       uses: actions/upload-artifact@v4
@@ -240,8 +266,40 @@ jobs:
         name: function-app
         path: ./output
 
+    - name: Verify downloaded artifact
+      run: |
+        echo "🔍 Verifying downloaded artifact contents..."
+        ls -la ./output
+        echo ""
+        echo "📂 Checking critical files..."
+        test -f ./output/host.json && echo "✅ host.json present" || echo "❌ host.json missing"
+        test -f ./output/Functions.dll && echo "✅ Functions.dll present" || echo "❌ Functions.dll missing"
+        test -f ./output/Functions.deps.json && echo "✅ Functions.deps.json present" || echo "❌ Functions.deps.json missing"
+        test -f ./output/Functions.runtimeconfig.json && echo "✅ Functions.runtimeconfig.json present" || echo "❌ Functions.runtimeconfig.json missing"
+        echo ""
+        echo "📋 All files in output directory:"
+        find ./output -type f | head -20
+
+    - name: Check Function App Configuration
+      run: |
+        echo "🔍 Checking Function App OS and configuration..."
+        
+        FUNC_APP_KIND=$(az functionapp show \
+          --name ${{ env.AZURE_FUNCTIONAPP_NAME }} \
+          --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+          --query "kind" -o tsv)
+        
+        echo "Function App Kind: $FUNC_APP_KIND"
+        
+        if [[ "$FUNC_APP_KIND" == *"linux"* ]]; then
+          echo "✅ Linux Function App detected"
+        elif [[ "$FUNC_APP_KIND" == *"windows"* ]]; then
+          echo "⚠️ Windows Function App detected - may need different deployment approach"
+        fi
+
     - name: Configure Function App Settings
       run: |
+        echo "⚙️ Configuring Function App settings..."
         az functionapp config appsettings set \
           --name ${{ env.AZURE_FUNCTIONAPP_NAME }} \
           --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
@@ -249,7 +307,10 @@ jobs:
             "ServiceBusConnection=${{ steps.deploy.outputs.serviceBusConnectionString }}" \
             "FUNCTIONS_WORKER_RUNTIME=dotnet-isolated" \
             "FUNCTIONS_EXTENSION_VERSION=~4" \
-            "AzureWebJobsDisableHomepage=false"
+            "AzureWebJobsDisableHomepage=false" \
+            "WEBSITE_RUN_FROM_PACKAGE=0"
+        
+        echo "✅ App settings configured"
 
     - name: Deploy to Azure Functions
       uses: Azure/functions-action@v1
@@ -297,14 +358,47 @@ jobs:
           --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
           --query "defaultHostName" -o tsv)
         
-        # List functions
-        echo "📋 Listing deployed functions..."
-        az functionapp function list \
+        # Check function app state
+        echo "📊 Function App State:"
+        az functionapp show \
           --name ${{ env.AZURE_FUNCTIONAPP_NAME }} \
           --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
-          --query "[].{Name:name, Trigger:config.bindings[0].type}" -o table || echo "⚠️ Could not list functions yet (they may still be loading)"
+          --query "{State:state, RuntimeVersion:siteConfig.linuxFxVersion, WorkerRuntime:siteConfig.appSettings[?name=='FUNCTIONS_WORKER_RUNTIME'].value | [0]}" \
+          -o table
         
-        echo "✅ Deployment completed successfully"
+        # Check app settings
+        echo ""
+        echo "⚙️ Key App Settings:"
+        az functionapp config appsettings list \
+          --name ${{ env.AZURE_FUNCTIONAPP_NAME }} \
+          --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+          --query "[?name=='FUNCTIONS_WORKER_RUNTIME' || name=='FUNCTIONS_EXTENSION_VERSION'].{Name:name, Value:value}" \
+          -o table
+        
+        # List functions with more details
+        echo ""
+        echo "📋 Listing deployed functions..."
+        FUNCTION_COUNT=$(az functionapp function list \
+          --name ${{ env.AZURE_FUNCTIONAPP_NAME }} \
+          --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+          --query "length(@)" -o tsv)
+        
+        echo "Found $FUNCTION_COUNT function(s)"
+        
+        if [ "$FUNCTION_COUNT" -gt 0 ]; then
+          az functionapp function list \
+            --name ${{ env.AZURE_FUNCTIONAPP_NAME }} \
+            --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+            --query "[].{Name:name, Trigger:config.bindings[0].type, Status:config.disabled}" -o table
+        else
+          echo "⚠️ No functions found!"
+          echo ""
+          echo "🔍 Checking Kudu for deployed files..."
+          echo "Please manually check: https://${{ env.AZURE_FUNCTIONAPP_NAME }}.scm.azurewebsites.net/api/vfs/site/wwwroot/"
+        fi
+        
+        echo ""
+        echo "✅ Verification completed"
         echo "🌐 Function App: https://$FUNC_APP_URL"
 
     - name: Azure Logout
