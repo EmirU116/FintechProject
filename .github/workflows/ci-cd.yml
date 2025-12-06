@@ -139,14 +139,18 @@ jobs:
             'red' 
           }}
 
-    - name: Build Azure Functions
-      run: dotnet build src/Functions/Functions.csproj --configuration ${{ env.BUILD_CONFIGURATION }} --output ./output
+    - name: Publish Azure Functions
+      run: |
+        dotnet publish src/Functions/Functions.csproj \
+          --configuration ${{ env.BUILD_CONFIGURATION }} \
+          --output ./output
 
     - name: Publish Azure Functions artifact
       uses: actions/upload-artifact@v4
       with:
         name: function-app
         path: ./output
+        retention-days: 1
 
   # ========================================
   # CodeQL Security Analysis
@@ -243,18 +247,65 @@ jobs:
           --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
           --settings \
             "ServiceBusConnection=${{ steps.deploy.outputs.serviceBusConnectionString }}" \
-            "FUNCTIONS_WORKER_RUNTIME=dotnet-isolated"
+            "FUNCTIONS_WORKER_RUNTIME=dotnet-isolated" \
+            "FUNCTIONS_EXTENSION_VERSION=~4" \
+            "AzureWebJobsDisableHomepage=false"
 
     - name: Deploy to Azure Functions
       uses: Azure/functions-action@v1
       with:
         app-name: ${{ env.AZURE_FUNCTIONAPP_NAME }}
         package: ./output
+        respect-funcignore: true
+        scm-do-build-during-deployment: false
+        enable-oryx-build: false
+
+    - name: Restart Function App
+      run: |
+        echo "🔄 Restarting function app to ensure triggers are loaded..."
+        az functionapp restart \
+          --name ${{ env.AZURE_FUNCTIONAPP_NAME }} \
+          --resource-group ${{ env.AZURE_RESOURCE_GROUP }}
+        
+        echo "⏳ Waiting for function app to restart..."
+        sleep 30
+
+    - name: Sync Function Triggers
+      run: |
+        echo "🔄 Syncing function triggers..."
+        
+        # Get subscription ID
+        SUBSCRIPTION_ID=$(az account show --query id -o tsv)
+        
+        # Sync triggers
+        az rest \
+          --method POST \
+          --uri "/subscriptions/$SUBSCRIPTION_ID/resourceGroups/${{ env.AZURE_RESOURCE_GROUP }}/providers/Microsoft.Web/sites/${{ env.AZURE_FUNCTIONAPP_NAME }}/syncfunctiontriggers?api-version=2023-01-01"
+        
+        echo "✅ Trigger sync completed"
+        
+        # Wait for sync to complete
+        sleep 15
 
     - name: Verify deployment
       run: |
+        echo "🔍 Verifying deployment..."
+        
+        # Get function app details
+        FUNC_APP_URL=$(az functionapp show \
+          --name ${{ env.AZURE_FUNCTIONAPP_NAME }} \
+          --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+          --query "defaultHostName" -o tsv)
+        
+        # List functions
+        echo "📋 Listing deployed functions..."
+        az functionapp function list \
+          --name ${{ env.AZURE_FUNCTIONAPP_NAME }} \
+          --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+          --query "[].{Name:name, Trigger:config.bindings[0].type}" -o table || echo "⚠️ Could not list functions yet (they may still be loading)"
+        
         echo "✅ Deployment completed successfully"
-        echo "🌐 Function App: https://${{ env.AZURE_FUNCTIONAPP_NAME }}.azurewebsites.net"
+        echo "🌐 Function App: https://$FUNC_APP_URL"
 
     - name: Azure Logout
       if: always()
