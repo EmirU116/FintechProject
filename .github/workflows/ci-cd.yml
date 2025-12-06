@@ -314,11 +314,20 @@ jobs:
         
         echo "✅ App settings configured"
 
+    - name: Create deployment package
+      run: |
+        echo "📦 Creating zip package for Windows Function App..."
+        cd ./output
+        zip -r ../function-app.zip .
+        cd ..
+        echo "✅ Package created: function-app.zip"
+        ls -lh function-app.zip
+
     - name: Deploy to Azure Functions
       uses: Azure/functions-action@v1
       with:
         app-name: ${{ env.AZURE_FUNCTIONAPP_NAME }}
-        package: ./output
+        package: function-app.zip
         respect-funcignore: true
         scm-do-build-during-deployment: false
         enable-oryx-build: false
