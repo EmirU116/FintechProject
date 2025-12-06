@@ -278,6 +278,7 @@ jobs:
         test -f ./output/Functions.dll && echo "✅ Functions.dll present" || echo "❌ Functions.dll missing"
         test -f ./output/Functions.deps.json && echo "✅ Functions.deps.json present" || echo "❌ Functions.deps.json missing"
         test -f ./output/Functions.runtimeconfig.json && echo "✅ Functions.runtimeconfig.json present" || echo "❌ Functions.runtimeconfig.json missing"
+        test -f ./output/functions.metadata && echo "✅ functions.metadata present" || echo "❌ functions.metadata missing"
         echo ""
         echo "📋 All files in output directory:"
         find ./output -type f | head -20
@@ -310,7 +311,7 @@ jobs:
             "FUNCTIONS_WORKER_RUNTIME=dotnet-isolated" \
             "FUNCTIONS_EXTENSION_VERSION=~4" \
             "AzureWebJobsDisableHomepage=false" \
-            "WEBSITE_RUN_FROM_PACKAGE=0"
+            "WEBSITE_RUN_FROM_PACKAGE=1"
         
         echo "✅ App settings configured"
 
@@ -328,7 +329,7 @@ jobs:
       with:
         app-name: ${{ env.AZURE_FUNCTIONAPP_NAME }}
         package: function-app.zip
-        respect-funcignore: true
+        respect-funcignore: false
         scm-do-build-during-deployment: false
         enable-oryx-build: false
 
