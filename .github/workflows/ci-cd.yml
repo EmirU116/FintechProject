@@ -226,7 +226,7 @@ jobs:
 
     - name: Sync Function Triggers
       run: |
-        az functionapp functions sync \
+        az functionapp function sync \
           --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
           --name ${{ env.AZURE_FUNCTIONAPP_NAME }}
 
