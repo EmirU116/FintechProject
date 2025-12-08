@@ -93,6 +93,84 @@ flowchart TB
     style PostgreSQL fill:#336791,color:#fff
 ```
 
+### 📖 How It Works
+
+The system follows an **event-driven, asynchronous architecture** with clear separation of concerns:
+
+#### 1️⃣ **Payment Initiation** (HTTP Layer)
+```
+Client → POST /api/ProcessPayment → ProcessPayment Function
+```
+- **Client** sends payment request with card details, amount, and currency
+- **ProcessPayment** validates the request and performs initial checks
+- Returns immediate response with `TransactionId` (non-blocking)
+- **Two actions happen in parallel:**
+  1. Queues message to Service Bus for async processing
+  2. Publishes `Transaction.Queued` event to Event Grid
+
+#### 2️⃣ **Asynchronous Processing** (Service Bus Queue)
+```
+Service Bus Queue → SettleTransaction Function → MoneyTransferService
+```
+- **Service Bus** ensures reliable, decoupled message delivery
+- **SettleTransaction** picks up queued transactions (triggered automatically)
+- **MoneyTransferService** orchestrates the core business logic:
+  - Validates card status, expiry, and balance
+  - Performs balance deduction
+  - Updates database with transaction result
+- **Outcome:** Transaction marked as `Settled` ✅ or `Failed` ❌
+
+#### 3️⃣ **Event Broadcasting** (Event Grid)
+```
+SettleTransaction → Publishes Event → Event Grid → Multiple Subscribers
+```
+After processing, **SettleTransaction** publishes events based on outcome:
+- `Transaction.Settled` - Successful payment
+- `Transaction.Failed` - Insufficient funds, validation errors, etc.
+
+**Event Grid** acts as a central event router, broadcasting to **5 independent subscribers** simultaneously:
+
+| Subscriber | Purpose | Actions |
+|------------|---------|---------|
+| **🛡️ FraudDetectionAnalyzer** | Real-time fraud detection | Analyzes patterns, flags suspicious activity, stores alerts |
+| **📝 AuditLogWriter** | Compliance & audit trail | Writes immutable audit logs for every transaction event |
+| **🔔 SendTransactionNotification** | User notifications | Sends email/SMS confirmations to cardholders |
+| **📈 TransactionAnalytics** | Business intelligence | Aggregates metrics (volume, success rates, trends) |
+| **✅ OnTransactionSettled** | Custom event handling | Extensible handler for additional business logic |
+
+**Key Benefit:** All subscribers run **independently and in parallel** - if one fails, others continue unaffected.
+
+#### 4️⃣ **Fraud Detection Feedback Loop**
+```
+FraudDetectionAnalyzer → Detects High Risk → Publishes Fraud.AlertTriggered Event
+```
+- If fraud rules are triggered (large amounts, unusual times, etc.)
+- **FraudDetectionAnalyzer** publishes a new event back to Event Grid
+- Other systems can subscribe to these alerts for automated blocking or review
+
+#### 5️⃣ **Data Queries** (Read Operations)
+```
+Client → GET /api/cards → GetCreditCards → Query PostgreSQL
+Client → GET /api/processed-transactions → GetProcessedTransactions → Query PostgreSQL
+Client → GET /api/audit-logs → GetAuditLogs → Query PostgreSQL
+```
+- **Dedicated read endpoints** query the database directly
+- Provides access to:
+  - Credit card information and balances
+  - Transaction history with full details
+  - Complete audit trail for compliance
+
+### 🎯 Architecture Benefits
+
+| Pattern | Benefit |
+|---------|---------|
+| **Asynchronous Processing** | Payment API responds instantly; actual processing happens in background |
+| **Queue-Based Reliability** | Service Bus ensures no transactions are lost, even during high load |
+| **Event-Driven Decoupling** | Add/remove features without changing core payment logic |
+| **Parallel Event Processing** | Fraud detection, audit, notifications all happen simultaneously |
+| **Idempotent Operations** | Same transaction can't be processed twice (deduplication) |
+| **Horizontal Scalability** | Each function scales independently based on load |
+
 ---
 
 ## ✨ Key Features
