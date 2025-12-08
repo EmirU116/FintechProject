@@ -224,12 +224,6 @@ jobs:
           --name ${{ env.AZURE_FUNCTIONAPP_NAME }} \
           --src function.zip
 
-    - name: Sync Function Triggers
-      run: |
-        az functionapp function sync \
-          --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
-          --name ${{ env.AZURE_FUNCTIONAPP_NAME }}
-
     - name: Restart Function App
       run: |
         az functionapp restart \
