@@ -140,7 +140,12 @@ jobs:
           }}
 
     - name: Publish Azure Functions (produce deployable output)
-      run: dotnet publish src/Functions/Functions.csproj --configuration ${{ env.BUILD_CONFIGURATION }} --output ./output --no-restore
+      run: |
+        dotnet publish src/Functions/Functions.csproj \
+          --configuration ${{ env.BUILD_CONFIGURATION }} \
+          --runtime linux-x64 \
+          --self-contained false \
+          --output ./output
 
     - name: Inspect publish folder
       run: |
@@ -248,11 +253,19 @@ jobs:
       run: |
         echo "📦 Contents of ./output (top level):"
         ls -la ./output || true
-        echo "📂 Recursive listing (first 300 lines):"
-        find ./output -maxdepth 3 -print | head -300 || true
+        echo ""
+        echo "📂 Checking for function folders and metadata:"
+        find ./output -name "function.json" -o -name "*.metadata" || echo "⚠️  No function.json or metadata files found"
+        echo ""
         echo "🔍 Checking critical files:"
         [ -f ./output/host.json ] && echo "✅ host.json exists" || echo "❌ host.json missing"
-        [ -d ./output/bin ] && echo "✅ bin directory exists" || echo "❌ bin directory missing"
+        [ -f ./output/functions.metadata ] && echo "✅ functions.metadata exists" || echo "❌ functions.metadata missing"
+        echo ""
+        echo "📋 Content of functions.metadata:"
+        cat ./output/functions.metadata 2>/dev/null || echo "Could not read functions.metadata"
+        echo ""
+        echo "📋 Content of host.json:"
+        cat ./output/host.json 2>/dev/null || echo "Could not read host.json"
 
     - name: Configure Function App Settings
       run: |
@@ -276,12 +289,11 @@ jobs:
         echo ""
         echo "📋 Checking deployment status..."
         
-        # List latest deployments
+        # List deployment history
         echo "🔍 Recent deployments:"
-        az webapp deployment list \
+        az webapp deployment source config-local-git \
           --name ${{ env.AZURE_FUNCTIONAPP_NAME }} \
-          --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
-          --output table || true
+          --resource-group ${{ env.AZURE_RESOURCE_GROUP }} 2>/dev/null || echo "Using ZIP Deploy (no git history)"
         
         # Show site configuration
         echo ""
@@ -292,17 +304,43 @@ jobs:
           --query "{name:name,kind:kind,state:state,defaultHostName:defaultHostName,enabledHostNames:enabledHostNames}" \
           --output json || true
         
+        # Check app settings
+        echo ""
+        echo "🔧 Current app settings:"
+        az functionapp config appsettings list \
+          --name ${{ env.AZURE_FUNCTIONAPP_NAME }} \
+          --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+          --query "[?name=='FUNCTIONS_WORKER_RUNTIME' || name=='FUNCTIONS_EXTENSION_VERSION' || name=='WEBSITE_RUN_FROM_PACKAGE'].{name:name,value:value}" \
+          --output table || true
+        
+        # Wait for runtime to initialize (zip deploy needs time)
+        echo ""
+        echo "⏳ Waiting 30 seconds for Azure Functions runtime to initialize..."
+        sleep 30
+        
         # List registered functions
         echo ""
         echo "📝 Registered functions (what the runtime sees):"
         az functionapp function list \
           --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
           --name ${{ env.AZURE_FUNCTIONAPP_NAME }} \
-          --output table || echo "⚠️  Could not list functions - may need to wait for runtime to initialize"
+          --output table || echo "⚠️  No functions registered yet - check Kudu logs"
+        
+        # Get function app logs for diagnostics
+        echo ""
+        echo "📄 Recent application logs:"
+        az webapp log tail \
+          --name ${{ env.AZURE_FUNCTIONAPP_NAME }} \
+          --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+          --lines 50 &
+        TAIL_PID=$!
+        sleep 5
+        kill $TAIL_PID 2>/dev/null || true
         
         echo ""
         echo "🔗 Kudu deployment logs: https://${{ env.AZURE_FUNCTIONAPP_NAME }}.scm.azurewebsites.net/api/deployments"
         echo "🔗 Function App portal: https://portal.azure.com/#resource/subscriptions/$(az account show --query id -o tsv)/resourceGroups/${{ env.AZURE_RESOURCE_GROUP }}/providers/Microsoft.Web/sites/${{ env.AZURE_FUNCTIONAPP_NAME }}/functions"
+        echo "🔗 Kudu console: https://${{ env.AZURE_FUNCTIONAPP_NAME }}.scm.azurewebsites.net/DebugConsole"
 
     - name: Azure Logout
       if: always()
