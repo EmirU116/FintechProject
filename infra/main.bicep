@@ -169,7 +169,8 @@ resource eventGridTopic 'Microsoft.EventGrid/topics@2022-06-15' = {
 // See setup-event-grid-subscription.ps1
 
 output eventGridTopicEndpoint string = eventGridTopic.properties.endpoint
-output eventGridTopicKey string = listKeys(eventGridTopic.id, '2022-06-15').key1
 output eventGridTopicId string = eventGridTopic.id
 output functionAppId string = functionApp.id
 output functionAppName string = functionApp.name
+output serviceBusNamespace string = serviceBusNamespace.name
+output storageAccountName string = storage.name

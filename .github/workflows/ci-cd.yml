@@ -232,6 +232,7 @@ jobs:
     - name: Deploy Bicep Infrastructure
       id: deploy
       run: |
+        echo "🚀 Deploying Bicep infrastructure..."
         DEPLOYMENT_OUTPUT=$(az deployment group create \
           --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
           --template-file infra/main.bicep \
@@ -239,9 +240,36 @@ jobs:
           --query properties.outputs \
           --output json)
         
-        SERVICE_BUS_CONNECTION=$(echo $DEPLOYMENT_OUTPUT | jq -r '.serviceBusConnectionString.value')
+        if [ -z "$DEPLOYMENT_OUTPUT" ]; then
+          echo "::error::Bicep deployment failed or returned empty output"
+          exit 1
+        fi
+        
+        echo "📋 Deployment outputs:"
+        echo "$DEPLOYMENT_OUTPUT" | jq '.'
+        
+        FUNCTION_APP_NAME=$(echo "$DEPLOYMENT_OUTPUT" | jq -r '.functionAppName.value')
+        SB_NAMESPACE=$(echo "$DEPLOYMENT_OUTPUT" | jq -r '.serviceBusNamespace.value')
+        
+        echo "Extracted Function App: $FUNCTION_APP_NAME"
+        echo "Extracted Service Bus Namespace: $SB_NAMESPACE"
+        
+        # Get Service Bus connection string
+        SERVICE_BUS_CONNECTION=$(az servicebus namespace authorization-rule keys list \
+          --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+          --namespace-name $SB_NAMESPACE \
+          --name RootManageSharedAccessKey \
+          --query primaryConnectionString \
+          --output tsv)
+        
+        if [ -z "$SERVICE_BUS_CONNECTION" ]; then
+          echo "::warning::Could not retrieve Service Bus connection string"
+        fi
+        
         echo "::add-mask::$SERVICE_BUS_CONNECTION"
         echo "serviceBusConnectionString=$SERVICE_BUS_CONNECTION" >> $GITHUB_OUTPUT
+        echo "functionAppName=$FUNCTION_APP_NAME" >> $GITHUB_OUTPUT
+        echo "✅ Bicep deployment completed"
 
     - name: Download artifact
       uses: actions/download-artifact@v4
