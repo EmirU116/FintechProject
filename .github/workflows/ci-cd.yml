@@ -139,8 +139,16 @@ jobs:
             'red' 
           }}
 
-    - name: Build Azure Functions
-      run: dotnet build src/Functions/Functions.csproj --configuration ${{ env.BUILD_CONFIGURATION }} --output ./output
+    - name: Publish Azure Functions (produce deployable output)
+      run: dotnet publish src/Functions/Functions.csproj --configuration ${{ env.BUILD_CONFIGURATION }} --output ./output --no-restore
+
+    - name: Inspect publish folder
+      run: |
+        echo "=== Listing ./output ==="
+        ls -la ./output
+        echo "=== Recursive listing of first 500 lines ==="
+        ls -laR ./output | sed -n '1,500p'
+        if [ -f ./output/host.json ]; then echo "✅ host.json found"; else echo "::error::host.json missing"; exit 1; fi
 
     - name: Publish Azure Functions artifact
       uses: actions/upload-artifact@v4
@@ -236,6 +244,16 @@ jobs:
         name: function-app
         path: ./output
 
+    - name: Debug artifact contents before deploy
+      run: |
+        echo "📦 Contents of ./output (top level):"
+        ls -la ./output || true
+        echo "📂 Recursive listing (first 300 lines):"
+        find ./output -maxdepth 3 -print | head -300 || true
+        echo "🔍 Checking critical files:"
+        [ -f ./output/host.json ] && echo "✅ host.json exists" || echo "❌ host.json missing"
+        [ -d ./output/bin ] && echo "✅ bin directory exists" || echo "❌ bin directory missing"
+
     - name: Configure Function App Settings
       run: |
         az functionapp config appsettings set \
@@ -255,6 +273,36 @@ jobs:
       run: |
         echo "✅ Deployment completed successfully"
         echo "🌐 Function App: https://${{ env.AZURE_FUNCTIONAPP_NAME }}.azurewebsites.net"
+        echo ""
+        echo "📋 Checking deployment status..."
+        
+        # List latest deployments
+        echo "🔍 Recent deployments:"
+        az webapp deployment list \
+          --name ${{ env.AZURE_FUNCTIONAPP_NAME }} \
+          --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+          --output table || true
+        
+        # Show site configuration
+        echo ""
+        echo "⚙️  Function App configuration:"
+        az webapp show \
+          --name ${{ env.AZURE_FUNCTIONAPP_NAME }} \
+          --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+          --query "{name:name,kind:kind,state:state,defaultHostName:defaultHostName,enabledHostNames:enabledHostNames}" \
+          --output json || true
+        
+        # List registered functions
+        echo ""
+        echo "📝 Registered functions (what the runtime sees):"
+        az functionapp function list \
+          --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+          --name ${{ env.AZURE_FUNCTIONAPP_NAME }} \
+          --output table || echo "⚠️  Could not list functions - may need to wait for runtime to initialize"
+        
+        echo ""
+        echo "🔗 Kudu deployment logs: https://${{ env.AZURE_FUNCTIONAPP_NAME }}.scm.azurewebsites.net/api/deployments"
+        echo "🔗 Function App portal: https://portal.azure.com/#resource/subscriptions/$(az account show --query id -o tsv)/resourceGroups/${{ env.AZURE_RESOURCE_GROUP }}/providers/Microsoft.Web/sites/${{ env.AZURE_FUNCTIONAPP_NAME }}/functions"
 
     - name: Azure Logout
       if: always()
