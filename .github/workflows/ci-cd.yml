@@ -190,7 +190,7 @@ jobs:
         category: "/language:${{matrix.language}}"
 
   # ========================================
-  # CD: Deploy to Azure (Free/Minimal Cost)
+  # CD: Deploy to Azure (Free/Minimal Cost) test
   # ========================================
   deploy-azure:
     name: Deploy to Azure
